@@ -17,7 +17,7 @@ variable "fingerprint" {
 }
 
 variable "private_key_path" {
-  description = "OCI API private key path"
+  description = "Path to OCI API private key"
   type        = string
   sensitive   = true
 }
@@ -28,36 +28,21 @@ variable "region" {
 }
 
 variable "ssh_public_key" {
-  description = "SSH public key"
+  description = "SSH public key installed on the VM"
   type        = string
   sensitive   = true
 }
 
-variable "fault_domain" {
-  description = "OCI fault domain. Empty means OCI chooses."
+variable "allowed_ssh_cidr" {
+  description = "Public IPv4 address allowed to SSH"
   type        = string
-  default     = null
+
+  default = "0.0.0.0"
 }
 
-variable "instance_shape" {
-  description = "Always Free OCI compute shape"
+variable "vcn_cidr" {
+  description = "VCN CIDR"
   type        = string
 
-  validation {
-    condition = contains(
-      [
-        "VM.Standard.A1.Flex",
-        "VM.Standard.E2.1.Micro"
-      ],
-      var.instance_shape
-    )
-
-    error_message = "Only OCI Always Free compute shapes are allowed."
-  }
-}
-
-variable "instance_name" {
-  description = "OCI VM name"
-  type        = string
-  default     = "free-terraform-vm"
+  default = "10.0.0.0/16"
 }
