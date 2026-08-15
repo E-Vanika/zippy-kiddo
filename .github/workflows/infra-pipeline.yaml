@@ -99,11 +99,13 @@ jobs:
 
 
       - name: Terraform Init
+        working-directory: ./terraform
         run: |
-          terraform init
+          terraform init -backend=false
 
 
       - name: Terraform Validate
+        working-directory: ./terraform
         run: |
           terraform validate
 
