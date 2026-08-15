@@ -45,6 +45,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Terraform Format
+        working-directory: ./terraform
         run: terraform fmt -check -recursive
 
       # -------------------------------------------------------
@@ -52,6 +53,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Terraform Init
+        working-directory: ./terraform
         run: terraform init -backend=false
 
       # -------------------------------------------------------
@@ -59,6 +61,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Terraform Validate
+        working-directory: ./terraform
         run: terraform validate
 
       # -------------------------------------------------------
@@ -69,7 +72,7 @@ jobs:
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
-          scan-ref: .
+          scan-ref: ./terraform
           severity: HIGH,CRITICAL
           exit-code: 1
           format: table
@@ -121,6 +124,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Terraform Init
+        working-directory: ./terraform
         run: terraform init
 
       # -------------------------------------------------------
@@ -128,6 +132,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Terraform Plan
+        working-directory: ./terraform
         env:
           TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
           TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
@@ -147,7 +152,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: terraform-plan
-          path: tfplan
+          path: ./terraform/tfplan
           retention-days: 1
 
 
@@ -203,6 +208,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Terraform Init
+        working-directory: ./terraform
         run: terraform init
 
       # -------------------------------------------------------
@@ -213,12 +219,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: terraform-plan
+          path: ./terraform
 
       # -------------------------------------------------------
       # Apply EXACTLY the reviewed plan
       # -------------------------------------------------------
 
       - name: Terraform Apply
+        working-directory: ./terraform
         env:
           TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
           TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
@@ -235,6 +243,7 @@ jobs:
       # -------------------------------------------------------
 
       - name: Show VM information
+        working-directory: ./terraform
         run: |
           echo "=========================================="
           echo "OCI VM CREATED SUCCESSFULLY"
