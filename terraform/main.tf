@@ -102,15 +102,23 @@ resource "oci_core_subnet" "free_subnet" {
   dns_label = "public"
 }
 
-resource "oci_core_instance" "free_vm" {
+# Automatically fetches the correct AD string for your region
+data "oci_identity_availability_domains" "ads" {
   compartment_id = var.tenancy_ocid
+}
 
-  display_name = var.instance_name
+variable "fault_domain" {
+  type    = string
+  default = "FAULT-DOMAIN-1"
+}
 
-  availability_domain = var.availability_domain != null && trimspace(var.availability_domain) != "" ? var.availability_domain : data.oci_identity_availability_domains.ads.availability_domains[0].name
+resource "oci_core_instance" "free_vm" {
+  # Dynamically selects the first AD in Hyderabad without needing GitHub variables
+  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  compartment_id      = var.tenancy_ocid
+  shape               = "VM.Standard.A1.Flex" 
+  fault_domain        = var.fault_domain
 
-  # OCI Always Free Ampere A1
-  shape = "VM.Standard.A1.Flex"
 
   shape_config {
     ocpus         = 1
