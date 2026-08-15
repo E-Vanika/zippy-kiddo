@@ -128,7 +128,7 @@ resource "oci_core_instance" "free_vm" {
     source_type = "image"
     source_id   = data.oci_core_images.ubuntu.images[0].id
 
-    boot_volume_size_in_gbs = 47
+    boot_volume_size_in_gbs = 50
   }
 
   metadata = {
