@@ -1,0 +1,243 @@
+name: OCI Terraform Infra Pipeline
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  TF_IN_AUTOMATION: true
+  TF_INPUT: false
+
+jobs:
+
+  # =========================================================
+  # SECURITY + VALIDATION
+  # =========================================================
+
+  security:
+    name: Terraform DevSecOps Security
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.1
+
+      # -------------------------------------------------------
+      # Terraform formatting
+      # -------------------------------------------------------
+
+      - name: Terraform Format
+        run: terraform fmt -check -recursive
+
+      # -------------------------------------------------------
+      # Terraform initialization
+      # -------------------------------------------------------
+
+      - name: Terraform Init
+        run: terraform init -backend=false
+
+      # -------------------------------------------------------
+      # Terraform validation
+      # -------------------------------------------------------
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      # -------------------------------------------------------
+      # Trivy IaC Security Scan
+      # -------------------------------------------------------
+
+      - name: Trivy IaC Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          exit-code: 1
+          format: table
+
+      # -------------------------------------------------------
+      # Secret scanning
+      # -------------------------------------------------------
+
+      - name: Gitleaks Secret Scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+
+  # =========================================================
+  # TERRAFORM PLAN
+  # =========================================================
+
+  plan:
+    name: Terraform Plan
+    needs: security
+
+    runs-on: ubuntu-latest
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.1
+
+      # -------------------------------------------------------
+      # OCI API private key
+      # -------------------------------------------------------
+
+      - name: Create OCI API private key
+        shell: bash
+        run: |
+          printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" \
+            > "${{ runner.temp }}/oci_api_key.pem"
+
+          chmod 600 "${{ runner.temp }}/oci_api_key.pem"
+
+      # -------------------------------------------------------
+      # Terraform init
+      # -------------------------------------------------------
+
+      - name: Terraform Init
+        run: terraform init
+
+      # -------------------------------------------------------
+      # Terraform plan
+      # -------------------------------------------------------
+
+      - name: Terraform Plan
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+
+        run: |
+          terraform plan -out=tfplan
+
+      # -------------------------------------------------------
+      # Save plan for next job
+      # -------------------------------------------------------
+
+      - name: Upload Terraform Plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-plan
+          path: tfplan
+          retention-days: 1
+
+
+  # =========================================================
+  # APPLY
+  #
+  # IMPORTANT:
+  # This job is protected by the GitHub "production"
+  # environment.
+  #
+  # Configure required reviewers in:
+  #
+  # Repository
+  #   → Settings
+  #   → Environments
+  #   → production
+  #
+  # =========================================================
+
+  apply:
+    name: Terraform Apply
+    needs: plan
+
+    runs-on: ubuntu-latest
+
+    environment:
+      name: production
+
+    steps:
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.1
+
+      # -------------------------------------------------------
+      # OCI API private key
+      # -------------------------------------------------------
+
+      - name: Create OCI API private key
+        shell: bash
+        run: |
+          printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" \
+            > "${{ runner.temp }}/oci_api_key.pem"
+
+          chmod 600 "${{ runner.temp }}/oci_api_key.pem"
+
+      # -------------------------------------------------------
+      # Terraform init
+      # -------------------------------------------------------
+
+      - name: Terraform Init
+        run: terraform init
+
+      # -------------------------------------------------------
+      # Download approved plan
+      # -------------------------------------------------------
+
+      - name: Download Terraform Plan
+        uses: actions/download-artifact@v4
+        with:
+          name: terraform-plan
+
+      # -------------------------------------------------------
+      # Apply EXACTLY the reviewed plan
+      # -------------------------------------------------------
+
+      - name: Terraform Apply
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+
+        run: |
+          terraform apply -auto-approve tfplan
+
+      # -------------------------------------------------------
+      # Show outputs
+      # -------------------------------------------------------
+
+      - name: Show VM information
+        run: |
+          echo "=========================================="
+          echo "OCI VM CREATED SUCCESSFULLY"
+          echo "=========================================="
+
+          terraform output
