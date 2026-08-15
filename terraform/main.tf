@@ -166,7 +166,7 @@ resource "oci_core_instance" "free_vm" {
       : data.oci_core_images.ubuntu_e2.images[0].id
     )
 
-    boot_volume_size_in_gbs = 47
+    boot_volume_size_in_gbs = 50
   }
 
   metadata = {
