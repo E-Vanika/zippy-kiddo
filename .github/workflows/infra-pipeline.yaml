@@ -99,13 +99,11 @@ jobs:
 
 
       - name: Terraform Init
-        working-directory: ./terraform
         run: |
-          terraform init -backend=false
+          terraform init
 
 
       - name: Terraform Validate
-        working-directory: ./terraform
         run: |
           terraform validate
 
@@ -220,7 +218,6 @@ jobs:
       # ========================================================
 
       - name: Try A1 Always Free (terraform plan and terraform apply)
-        working-directory: ./terraform
 
         env:
 
