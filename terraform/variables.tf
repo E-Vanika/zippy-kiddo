@@ -34,10 +34,10 @@ variable "ssh_public_key" {
 }
 
 variable "allowed_ssh_cidr" {
-  description = "Public IPv4 address allowed to SSH"
+  description = "Public IPv4 or CIDR allowed to SSH; must not be within 0.0.0.0/8"
   type        = string
 
-  default = "0.0.0.0"
+  default = "106.219.182.133/32"
 }
 
 variable "vcn_cidr" {

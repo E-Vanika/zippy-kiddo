@@ -102,7 +102,7 @@ resource "oci_core_security_list" "free_security_list" {
   ingress_security_rules {
     protocol = "6"
 
-    source = "${var.allowed_ssh_cidr}/32"
+    source = var.allowed_ssh_cidr
 
     tcp_options {
       min = 22
@@ -125,16 +125,10 @@ resource "oci_core_security_list" "free_security_list" {
   }
 
   # ----------------------------------------------------------
-  # ALL OUTBOUND
+  # OUTBOUND INTERNET ACCESS
+  # OCI rejects 0.0.0.0/0 in security lists. Leave the egress
+  # rule unset so the default outbound policy applies.
   # ----------------------------------------------------------
-
-  egress_security_rules {
-    protocol = "all"
-
-    destination = "0.0.0.0/0"
-
-    description = "Allow outbound internet traffic"
-  }
 
   freeform_tags = {
     ManagedBy = "Terraform"
