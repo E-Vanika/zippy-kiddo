@@ -1,24 +1,23 @@
 output "instance_name" {
-  description = "VM name"
-  value       = oci_core_instance.free_vm.display_name
+  value = oci_core_instance.free_vm.display_name
 }
 
 output "instance_id" {
-  description = "OCI instance OCID"
-  value       = oci_core_instance.free_vm.id
-}
-
-output "private_ip" {
-  description = "Private IP address"
-  value       = oci_core_instance.free_vm.private_ip
+  value = oci_core_instance.free_vm.id
 }
 
 output "public_ip" {
-  description = "Public IP address"
-  value       = oci_core_instance.free_vm.public_ip
+  value = oci_core_instance.free_vm.public_ip
+}
+
+output "private_ip" {
+  value = oci_core_instance.free_vm.private_ip
+}
+
+output "shape" {
+  value = oci_core_instance.free_vm.shape
 }
 
 output "ssh_command" {
-  description = "SSH command"
-  value       = "ssh ubuntu@${oci_core_instance.free_vm.public_ip}"
+  value = "ssh -i ~/.ssh/id_ed25519 ubuntu@${oci_core_instance.free_vm.public_ip}"
 }

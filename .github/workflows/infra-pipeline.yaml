@@ -1,52 +1,126 @@
 name: OCI Terraform Infra Pipeline
 
 on:
+
+  # ============================================================
+  # RUN SECURITY + VALIDATION FOR PULL REQUESTS
+  # ============================================================
   pull_request:
     branches:
       - main
+
+  # ============================================================
+  # DEPLOY AFTER MERGE TO MAIN
+  # ============================================================
   push:
     branches:
       - main
+
+  # ============================================================
+  # MANUAL RUN
+  # ============================================================
   workflow_dispatch:
+
+  # ============================================================
+  # SCHEDULED SECURITY CHECK
+  #
+  # GitHub cron uses UTC.
+  #
+  # This example runs every day at 02:30 UTC.
+  # Change this if you want another time.
+  # ============================================================
+  schedule:
+    - cron: "30 2 * * *"
+
+
+# ==============================================================
+# GLOBAL PERMISSIONS
+# ==============================================================
 
 permissions:
   contents: read
 
+
+# ==============================================================
+# GLOBAL ENVIRONMENT
+# ==============================================================
+
 env:
-  TF_IN_AUTOMATION: true
-  TF_INPUT: false
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+
 
 jobs:
-  # =========================================================
-  # SECURITY + VALIDATION
-  # =========================================================
+
+  # ============================================================
+  # JOB 1 — SECURITY + VALIDATION
+  # ============================================================
+
   security:
+
     name: Terraform DevSecOps Security
+
     runs-on: ubuntu-latest
+
     steps:
+
+      # --------------------------------------------------------
+      # CHECKOUT
+      # --------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+
+      # --------------------------------------------------------
+      # TERRAFORM
+      # --------------------------------------------------------
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.13.1
 
-      - name: Terraform Format
+
+      # --------------------------------------------------------
+      # TERRAFORM FORMAT
+      # --------------------------------------------------------
+
+      - name: Terraform Format Check
         working-directory: ./terraform
-        run: terraform fmt -check -recursive
+        run: |
+          terraform fmt -check -recursive
+
+
+      # --------------------------------------------------------
+      # TERRAFORM INIT
+      #
+      # Backend disabled because this job only validates code.
+      # --------------------------------------------------------
 
       - name: Terraform Init
         working-directory: ./terraform
-        run: terraform init -backend=false
+        run: |
+          terraform init -backend=false
+
+
+      # --------------------------------------------------------
+      # TERRAFORM VALIDATE
+      # --------------------------------------------------------
 
       - name: Terraform Validate
         working-directory: ./terraform
-        run: terraform validate
+        run: |
+          terraform validate
 
-      - name: Trivy IaC Scan
+
+      # --------------------------------------------------------
+      # TRIVY IaC SECURITY SCAN
+      # --------------------------------------------------------
+
+      - name: Trivy IaC Security Scan
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: config
@@ -55,94 +129,524 @@ jobs:
           exit-code: 1
           format: table
 
+
+      # --------------------------------------------------------
+      # GITLEAKS SECRET SCAN
+      # --------------------------------------------------------
+
       - name: Gitleaks Secret Scan
         uses: gitleaks/gitleaks-action@v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # =========================================================
-  # DEPLOYMENT ENGINE (PLAN & CAPACITY CONQUER)
-  # =========================================================
+
+  # ============================================================
+  # JOB 2 — DEPLOY
+  #
+  # Only runs:
+  #
+  # 1. push to main
+  # 2. manual workflow_dispatch
+  #
+  # Does NOT deploy on:
+  #
+  # - Pull request
+  # - Scheduled security run
+  #
+  # ============================================================
+
   deploy:
-    name: Terraform Deployment Engine
-    needs: security
-    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+
+    name: Free-Only OCI Deployment
+
+    needs:
+      - security
+
+    if: >
+      github.event_name == 'push' ||
+      github.event_name == 'workflow_dispatch'
+
     runs-on: ubuntu-latest
+
+
+    # ==========================================================
+    # IMPORTANT
+    #
+    # Configure a GitHub Environment called "production"
+    # and enable "Required reviewers".
+    #
+    # Terraform APPLY will wait for your approval.
+    # ==========================================================
+
     environment:
       name: production
 
+
     steps:
+
+      # --------------------------------------------------------
+      # CHECKOUT
+      # --------------------------------------------------------
+
       - name: Checkout repository
         uses: actions/checkout@v4
+
+
+      # --------------------------------------------------------
+      # TERRAFORM
+      # --------------------------------------------------------
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: 1.13.1
 
+
+      # --------------------------------------------------------
+      # CREATE TEMPORARY OCI PRIVATE KEY
+      #
+      # The key exists only on the GitHub runner.
+      # It is NOT committed to Git.
+      # --------------------------------------------------------
+
       - name: Create OCI API private key
         shell: bash
         run: |
-          printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" > "${{ runner.temp }}/oci_api_key.pem"
+
+          printf '%s\n' "${{ secrets.OCI_PRIVATE_KEY }}" \
+            > "${{ runner.temp }}/oci_api_key.pem"
+
           chmod 600 "${{ runner.temp }}/oci_api_key.pem"
+
+
+      # --------------------------------------------------------
+      # TERRAFORM INIT
+      # --------------------------------------------------------
 
       - name: Terraform Init
         working-directory: ./terraform
-        run: terraform init
-
-      - name: Capacity Fault Domain Sweep
-        working-directory: ./terraform
-        env:
-          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
-          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
-          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
-          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
-          TF_VAR_region: ${{ secrets.OCI_REGION }}
-          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
-        shell: bash
         run: |
-          # Sweep through the three separate hardware groups (fault domains) in Hyderabad
-          FD_LIST=("FAULT-DOMAIN-1" "FAULT-DOMAIN-2" "FAULT-DOMAIN-3")
-          deploy_succeeded=0
+          terraform init -upgrade
 
-          for fd in "${FD_LIST[@]}"; do
-            echo "------------------------------------------------------"
-            echo "Attempting deployment in Target Fault Domain: $fd"
-            echo "------------------------------------------------------"
 
-            export TF_VAR_fault_domain="$fd"
+      # ========================================================
+      # FREE-ONLY CAPACITY ENGINE
+      # ========================================================
+
+      - name: Free-Only OCI Capacity Engine
+
+        working-directory: ./terraform
+
+        env:
+
+          # ----------------------------------------------------
+          # OCI AUTHENTICATION
+          # ----------------------------------------------------
+
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+
+          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+
+
+          # ----------------------------------------------------
+          # SSH PUBLIC KEY
+          # ----------------------------------------------------
+
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+
+
+        shell: bash
+
+        run: |
+
+          set -uo pipefail
+
+
+          echo ""
+          echo "======================================================"
+          echo "       OCI ALWAYS FREE CAPACITY ENGINE"
+          echo "======================================================"
+          echo ""
+
+          echo "Region:"
+          echo "${TF_VAR_region}"
+
+          echo ""
+          echo "Only Always Free compute shapes are permitted."
+          echo ""
+
+
+          # ====================================================
+          # SAFETY FUNCTION
+          #
+          # This makes sure we NEVER accidentally deploy
+          # something other than an allowed Always Free shape.
+          # ====================================================
+
+          validate_free_shape() {
+
+            local shape="$1"
+
+            case "$shape" in
+
+              VM.Standard.A1.Flex)
+
+                echo "Shape validation: A1 Flex = ALLOWED"
+                ;;
+
+              VM.Standard.E2.1.Micro)
+
+                echo "Shape validation: E2.1.Micro = ALLOWED"
+                ;;
+
+              *)
+
+                echo ""
+                echo "SECURITY ERROR"
+                echo "Unauthorized compute shape:"
+                echo "$shape"
+                echo ""
+                echo "This pipeline allows ONLY Always Free shapes."
+
+                return 1
+                ;;
+
+            esac
+          }
+
+
+          # ====================================================
+          # A1 CONFIGURATION
+          #
+          # THIS IS OUR PRIMARY VM.
+          #
+          # 1 OCPU
+          # 6 GB RAM
+          #
+          # ====================================================
+
+          A1_SHAPE="VM.Standard.A1.Flex"
+
+          validate_free_shape "$A1_SHAPE"
+
+
+          # ====================================================
+          # FAULT DOMAINS
+          #
+          # First:
+          # Let OCI choose.
+          #
+          # Then:
+          # Explicitly try FD1, FD2 and FD3.
+          # ====================================================
+
+          FAULT_DOMAINS=(
+
+            ""
+
+            "FAULT-DOMAIN-1"
+
+            "FAULT-DOMAIN-2"
+
+            "FAULT-DOMAIN-3"
+
+          )
+
+
+          deployment_success=0
+
+
+          # ====================================================
+          # PHASE 1
+          #
+          # A1 FLEX
+          #
+          # ALWAYS TRY THIS FIRST.
+          # ====================================================
+
+          echo ""
+          echo "======================================================"
+          echo "PHASE 1 — OCI A1 FLEX"
+          echo "======================================================"
+
+          echo ""
+          echo "Required configuration:"
+          echo "Shape : $A1_SHAPE"
+          echo "OCPU  : 1"
+          echo "RAM   : 6 GB"
+          echo ""
+
+
+          export TF_VAR_instance_shape="$A1_SHAPE"
+
+
+          # ====================================================
+          # A1 FAULT DOMAIN SWEEP
+          # ====================================================
+
+          for fd in "${FAULT_DOMAINS[@]}"; do
+
+
+            # --------------------------------------------------
+            # AUTOMATIC FAULT DOMAIN
+            # --------------------------------------------------
+
+            if [[ -z "$fd" ]]; then
+
+              echo ""
+              echo "------------------------------------------------------"
+              echo "A1 Attempt"
+              echo "Fault Domain: OCI AUTOMATIC SELECTION"
+              echo "------------------------------------------------------"
+
+              export TF_VAR_fault_domain=""
+
+
+            # --------------------------------------------------
+            # EXPLICIT FAULT DOMAIN
+            # --------------------------------------------------
+
+            else
+
+              echo ""
+              echo "------------------------------------------------------"
+              echo "A1 Attempt"
+              echo "Fault Domain: $fd"
+              echo "------------------------------------------------------"
+
+              export TF_VAR_fault_domain="$fd"
+
+            fi
+
+
+            # --------------------------------------------------
+            # REMOVE OLD PLAN
+            # --------------------------------------------------
+
+            rm -f tfplan
+
+
+            # --------------------------------------------------
+            # TERRAFORM PLAN
+            # --------------------------------------------------
+
+            echo ""
+            echo "Running Terraform plan..."
 
             if ! terraform plan -out=tfplan; then
-              echo "Plan generation failed for $fd. Skipping."
+
+              echo ""
+              echo "Terraform plan failed."
+
               continue
+
             fi
+
+
+            # --------------------------------------------------
+            # TERRAFORM APPLY
+            # --------------------------------------------------
+
+            echo ""
+            echo "Running Terraform apply..."
 
             if terraform apply -auto-approve tfplan; then
-              echo "Success! Infrastructure deployed successfully in $fd"
-              deploy_succeeded=1
+
+              echo ""
+              echo "======================================================"
+              echo "SUCCESS — A1 FLEX VM CREATED"
+              echo "======================================================"
+
+              deployment_success=1
+
               break
+
             else
-              echo "Apply failed (Out of capacity) in $fd. Trying next fault domain..."
+
+              echo ""
+              echo "A1 attempt failed."
+              echo "Trying next A1 option..."
+
               rm -f tfplan
+
             fi
+
           done
 
-          if [ "$deploy_succeeded" -ne 1 ]; then
-            echo "ERROR: Resource allocation completely failed across all hardware tracks in ap-hyderabad-1." >&2
-            exit 1
+
+          # ====================================================
+          # PHASE 2
+          #
+          # ONLY RUN IF ALL A1 OPTIONS FAILED
+          #
+          # E2.1.MICRO IS ALSO ALWAYS FREE.
+          # ====================================================
+
+          if [[ "$deployment_success" -eq 0 ]]; then
+
+
+            echo ""
+            echo "======================================================"
+            echo "PHASE 2 — ALWAYS FREE E2.1.MICRO"
+            echo "======================================================"
+
+            E2_SHAPE="VM.Standard.E2.1.Micro"
+
+
+            # --------------------------------------------------
+            # SAFETY CHECK
+            # --------------------------------------------------
+
+            validate_free_shape "$E2_SHAPE"
+
+
+            export TF_VAR_instance_shape="$E2_SHAPE"
+
+            export TF_VAR_fault_domain=""
+
+
+            rm -f tfplan
+
+
+            echo ""
+            echo "All A1 attempts failed."
+            echo ""
+            echo "Trying E2.1.Micro..."
+            echo "This is the Always Free fallback."
+            echo ""
+
+
+            # --------------------------------------------------
+            # PLAN
+            # --------------------------------------------------
+
+            if terraform plan -out=tfplan; then
+
+
+              # ------------------------------------------------
+              # APPLY
+              # ------------------------------------------------
+
+              if terraform apply -auto-approve tfplan; then
+
+                echo ""
+                echo "======================================================"
+                echo "SUCCESS — E2.1.MICRO VM CREATED"
+                echo "======================================================"
+
+                deployment_success=1
+
+              else
+
+                echo ""
+                echo "E2.1.Micro is also unavailable."
+
+              fi
+
+            else
+
+              echo ""
+              echo "E2.1.Micro Terraform plan failed."
+
+            fi
+
           fi
 
-      - name: Upload Terraform Plan Output
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan
-          path: ./terraform/tfplan
-          retention-days: 1
+
+          # ====================================================
+          # FINAL SAFETY CHECK
+          #
+          # NOTHING PAID CAN EVER BE CREATED.
+          # ====================================================
+
+          if [[ "$deployment_success" -eq 0 ]]; then
+
+            echo ""
+            echo "======================================================"
+            echo "NO ALWAYS FREE CAPACITY AVAILABLE"
+            echo "======================================================"
+
+            echo ""
+            echo "A1 Flex:"
+            echo "FAILED"
+
+            echo ""
+            echo "E2.1.Micro:"
+            echo "FAILED"
+
+            echo ""
+            echo "The pipeline is STOPPING."
+            echo ""
+            echo "NO PAID OCI INSTANCE WILL BE CREATED."
+
+            exit 1
+
+          fi
+
+
+          # ====================================================
+          # DEPLOYMENT INFORMATION
+          # ====================================================
+
+          echo ""
+          echo "======================================================"
+          echo "DEPLOYMENT SUCCESSFUL"
+          echo "======================================================"
+
+          echo ""
+          echo "Shape:"
+          terraform output shape
+
+          echo ""
+          echo "Public IP:"
+          terraform output public_ip
+
+          echo ""
+          echo "Private IP:"
+          terraform output private_ip
+
+          echo ""
+          echo "SSH command:"
+          terraform output ssh_command
+
+          echo ""
+          echo "======================================================"
+
+
+      # ========================================================
+      # SHOW FINAL TERRAFORM OUTPUT
+      # ========================================================
 
       - name: Show VM information
+
         working-directory: ./terraform
+
         run: |
+
+          echo ""
           echo "======================================================"
-          echo "              DEPLOYMENT OUTPUT DATA                  "
+          echo "              OCI VM INFORMATION"
           echo "======================================================"
+
           terraform output
+
+          echo ""
+          echo "======================================================"
+
+
+      # ========================================================
+      # CLEAN OCI PRIVATE KEY
+      # ========================================================
+
+      - name: Cleanup OCI private key
+        if: always()
+        shell: bash
+        run: |
+
+          rm -f "${{ runner.temp }}/oci_api_key.pem"

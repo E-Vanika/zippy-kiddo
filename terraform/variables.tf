@@ -17,26 +17,43 @@ variable "fingerprint" {
 }
 
 variable "private_key_path" {
-  description = "Path to OCI API private key"
+  description = "OCI API private key path"
   type        = string
   sensitive   = true
 }
 
 variable "region" {
-  description = "OCI home region"
+  description = "OCI region"
   type        = string
 }
 
-variable "availability_domain" {
-  description = "Optional OCI availability domain override for VM placement; if unset, the first AD in the tenancy is used"
+variable "ssh_public_key" {
+  description = "SSH public key"
+  type        = string
+  sensitive   = true
+}
+
+variable "fault_domain" {
+  description = "OCI fault domain. Empty means OCI chooses."
   type        = string
   default     = null
 }
 
-variable "ssh_public_key" {
-  description = "SSH public key for the VM"
+variable "instance_shape" {
+  description = "Always Free OCI compute shape"
   type        = string
-  sensitive   = true
+
+  validation {
+    condition = contains(
+      [
+        "VM.Standard.A1.Flex",
+        "VM.Standard.E2.1.Micro"
+      ],
+      var.instance_shape
+    )
+
+    error_message = "Only OCI Always Free compute shapes are allowed."
+  }
 }
 
 variable "instance_name" {
