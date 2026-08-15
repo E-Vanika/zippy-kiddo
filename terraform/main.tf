@@ -107,7 +107,7 @@ resource "oci_core_instance" "free_vm" {
 
   display_name = var.instance_name
 
-  availability_domain = data.oci_identity_availability_domains.ads.availability_domains[0].name
+  availability_domain = var.availability_domain != null && trimspace(var.availability_domain) != "" ? var.availability_domain : data.oci_identity_availability_domains.ads.availability_domains[0].name
 
   # OCI Always Free Ampere A1
   shape = "VM.Standard.A1.Flex"

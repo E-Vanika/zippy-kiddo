@@ -27,6 +27,12 @@ variable "region" {
   type        = string
 }
 
+variable "availability_domain" {
+  description = "Optional OCI availability domain override for VM placement; if unset, the first AD in the tenancy is used"
+  type        = string
+  default     = null
+}
+
 variable "ssh_public_key" {
   description = "SSH public key for the VM"
   type        = string
