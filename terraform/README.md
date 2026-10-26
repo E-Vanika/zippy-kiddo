@@ -27,9 +27,11 @@ stages:
 1. Target and apply `oci_core_instance.e2_micro_vm` with its network
    dependencies. This establishes the E2 Micro fallback without waiting for A1
    capacity.
-2. Produce and apply a complete plan. This retries the A1 Flex instance. An OCI
-   capacity failure makes the workflow run fail, but the previously applied E2
-   VM remains available and recorded in remote state.
+2. Produce and apply a complete plan. This retries the A1 Flex instance. The
+   specific OCI `Out of host capacity` response becomes a workflow warning, and
+   the previously applied E2 VM remains available and recorded in remote state.
+   Authentication, configuration, quota, and other unexpected failures still
+   fail the workflow.
 
 The plan safety checks reject any compute shape other than:
 
