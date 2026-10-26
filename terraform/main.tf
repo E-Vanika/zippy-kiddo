@@ -23,6 +23,21 @@ data "oci_core_images" "ubuntu_a1" {
 }
 
 # ============================================================
+# UBUNTU AMD64 IMAGE FOR THE ALWAYS FREE E2 MICRO FALLBACK
+# ============================================================
+
+data "oci_core_images" "ubuntu_e2_micro" {
+  compartment_id = var.tenancy_ocid
+
+  operating_system         = "Canonical Ubuntu"
+  operating_system_version = "24.04"
+  shape                    = "VM.Standard.E2.1.Micro"
+
+  sort_by    = "TIMECREATED"
+  sort_order = "DESC"
+}
+
+# ============================================================
 # VCN
 # ============================================================
 
@@ -125,10 +140,44 @@ resource "oci_core_security_list" "free_security_list" {
   }
 
   # ----------------------------------------------------------
-  # OUTBOUND INTERNET ACCESS
-  # OCI rejects 0.0.0.0/0 in security lists. Leave the egress
-  # rule unset so the default outbound policy applies.
+  # PUBLIC WEB TRAFFIC - ONLY THE EDGE PROXY BINDS THESE PORTS
   # ----------------------------------------------------------
+
+  ingress_security_rules {
+    protocol = "6"
+    source   = "0.0.0.0/0"
+
+    tcp_options {
+      min = 80
+      max = 80
+    }
+
+    description = "HTTP for ACME challenge and HTTPS redirect"
+  }
+
+  ingress_security_rules {
+    protocol = "6"
+    source   = "0.0.0.0/0"
+
+    tcp_options {
+      min = 443
+      max = 443
+    }
+
+    description = "HTTPS for Zippy Kiddo"
+  }
+
+  # ----------------------------------------------------------
+  # OUTBOUND INTERNET ACCESS
+  # Required for OS updates, container pulls, and model pulls.
+  # ----------------------------------------------------------
+
+  egress_security_rules {
+    protocol    = "all"
+    destination = "0.0.0.0/0"
+
+    description = "Allow outbound internet traffic"
+  }
 
   freeform_tags = {
     ManagedBy = "Terraform"
@@ -170,7 +219,7 @@ resource "oci_core_subnet" "free_subnet" {
 resource "oci_core_instance" "free_vm" {
   compartment_id = var.tenancy_ocid
 
-  display_name = "free-terraform-vm"
+  display_name = "zippy-kiddo-a1"
 
   availability_domain = (
     data.oci_identity_availability_domains.ads.availability_domains[0].name
@@ -225,8 +274,48 @@ resource "oci_core_instance" "free_vm" {
 
   freeform_tags = {
     ManagedBy = "Terraform"
-    Workload  = "DevOps-Kubernetes-Lab"
+    Workload  = "Zippy-Kiddo"
     Shape     = "VM.Standard.A1.Flex"
     Tier      = "Always-Free"
+  }
+}
+
+# ============================================================
+# ALWAYS FREE E2 MICRO FALLBACK VM
+# ============================================================
+
+resource "oci_core_instance" "e2_micro_vm" {
+  compartment_id = var.tenancy_ocid
+
+  display_name = "zippy-kiddo-e2-micro"
+
+  availability_domain = (
+    data.oci_identity_availability_domains.ads.availability_domains[0].name
+  )
+
+  shape = "VM.Standard.E2.1.Micro"
+
+  create_vnic_details {
+    subnet_id       = oci_core_subnet.free_subnet.id
+    assign_public_ip = true
+    hostname_label   = "zippykiddo"
+  }
+
+  source_details {
+    source_type             = "image"
+    source_id               = data.oci_core_images.ubuntu_e2_micro.images[0].id
+    boot_volume_size_in_gbs = 50
+  }
+
+  metadata = {
+    ssh_authorized_keys = var.ssh_public_key
+  }
+
+  freeform_tags = {
+    ManagedBy   = "Terraform"
+    Workload    = "Zippy-Kiddo"
+    Environment = "Portfolio"
+    Shape       = "VM.Standard.E2.1.Micro"
+    Tier        = "Always-Free"
   }
 }

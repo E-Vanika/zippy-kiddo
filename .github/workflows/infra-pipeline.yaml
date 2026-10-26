@@ -155,7 +155,7 @@ jobs:
 
   deploy:
 
-    name: Terraform - OCI A1 Deployment
+    name: Terraform - OCI Free Compute Deployment
 
     needs:
       - security
@@ -258,10 +258,10 @@ jobs:
 
 
       # ========================================================
-      # TERRAFORM PLAN
+      # E2 FALLBACK PLAN
       # ========================================================
 
-      - name: Terraform Plan
+      - name: Terraform Plan - E2 fallback
         working-directory: ./terraform
 
         env:
@@ -286,22 +286,19 @@ jobs:
 
           echo ""
           echo "======================================================"
-          echo "                TERRAFORM PLAN"
+          echo "             E2 FALLBACK PLAN"
           echo "======================================================"
 
           terraform plan \
-            -out=tfplan
+            -target=oci_core_instance.e2_micro_vm \
+            -out=e2.tfplan
 
 
       # ========================================================
-      # VERIFY TERRAFORM PLAN
-      #
-      # Hard safety check:
-      #
-      # We do NOT allow the old E2 Micro.
+      # VERIFY E2 PLAN
       # ========================================================
 
-      - name: Verify A1-only deployment
+      - name: Verify E2 fallback shape
         working-directory: ./terraform
 
         shell: bash
@@ -310,38 +307,22 @@ jobs:
 
           set -euo pipefail
 
-          echo "Checking Terraform plan for prohibited shapes..."
+          echo "Checking E2 fallback plan..."
 
-          terraform show -no-color tfplan > plan.txt
-
-
-          # ----------------------------------------------------
-          # E2 MUST NEVER APPEAR
-          # ----------------------------------------------------
-
-          if grep -q "VM.Standard.E2.1.Micro" plan.txt; then
-
-            echo ""
-            echo "SECURITY FAILURE"
-            echo "VM.Standard.E2.1.Micro detected."
-            echo "Deployment blocked."
-
-            exit 1
-
-          fi
+          terraform show -no-color e2.tfplan > e2-plan.txt
 
 
           # ----------------------------------------------------
-          # A1 MUST APPEAR IF COMPUTE IS BEING CREATED
+          # IF COMPUTE IS CREATED, IT MUST BE THE FREE E2 SHAPE
           # ----------------------------------------------------
 
-          if grep -q "oci_core_instance.free_vm" plan.txt; then
+          if grep -q "oci_core_instance.e2_micro_vm" e2-plan.txt; then
 
-            if ! grep -q "VM.Standard.A1.Flex" plan.txt; then
+            if ! grep -q "VM.Standard.E2.1.Micro" e2-plan.txt; then
 
               echo ""
               echo "SECURITY FAILURE"
-              echo "Compute resource does not appear to be A1 Flex."
+              echo "E2 fallback is not VM.Standard.E2.1.Micro."
 
               exit 1
 
@@ -351,19 +332,14 @@ jobs:
 
 
           echo ""
-          echo "A1 shape validation passed."
+          echo "E2 shape validation passed."
 
 
       # ========================================================
-      # TERRAFORM APPLY
-      #
-      # ONE APPLY PER RUN.
-      #
-      # If OCI has no A1 capacity, this run fails.
-      # The next scheduled run will retry.
+      # APPLY E2 FALLBACK FIRST
       # ========================================================
 
-      - name: Terraform Apply
+      - name: Terraform Apply - E2 fallback
         working-directory: ./terraform
 
         env:
@@ -388,43 +364,111 @@ jobs:
 
           echo ""
           echo "======================================================"
-          echo "       OCI A1 ALWAYS FREE DEPLOYMENT"
+          echo "       OCI E2 ALWAYS FREE FALLBACK"
           echo "======================================================"
 
           echo ""
-          echo "Shape : VM.Standard.A1.Flex"
-          echo "OCPU  : 1"
-          echo "RAM   : 6 GB"
+          echo "Shape : VM.Standard.E2.1.Micro"
           echo ""
 
           if terraform apply \
               -auto-approve \
-              tfplan; then
+              e2.tfplan; then
 
             echo ""
             echo "======================================================"
-            echo "        A1 INSTANCE DEPLOYED SUCCESSFULLY"
+            echo "        E2 FALLBACK IS READY"
             echo "======================================================"
 
           else
 
             echo ""
             echo "======================================================"
-            echo "       A1 DEPLOYMENT FAILED"
+            echo "       E2 FALLBACK DEPLOYMENT FAILED"
             echo "======================================================"
 
             echo ""
-            echo "OCI may currently have no A1 host capacity."
-            echo ""
-            echo "This pipeline does NOT:"
-            echo "  - fall back to E2 Micro"
-            echo "  - create a paid shape"
-            echo "  - create another compute shape"
-            echo ""
-            echo "The scheduled workflow will try again."
+            echo "Review the Terraform and OCI errors above."
 
             exit 1
 
+          fi
+
+
+      # ========================================================
+      # FULL PLAN - RETRY THE A1 AFTER E2 IS SAFE
+      # ========================================================
+
+      - name: Terraform Plan - A1 retry
+        working-directory: ./terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          terraform plan -out=a1.tfplan
+
+
+      # ========================================================
+      # ALLOW ONLY THE TWO OCI ALWAYS FREE COMPUTE SHAPES
+      # ========================================================
+
+      - name: Verify free compute shapes
+        working-directory: ./terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          terraform show -json a1.tfplan > a1-plan.json
+
+          mapfile -t shapes < <(
+            jq -r '
+              .resource_changes[]?
+              | select(.type == "oci_core_instance")
+              | .change.after.shape // empty
+            ' a1-plan.json | sort -u
+          )
+
+          for shape in "${shapes[@]}"; do
+            case "${shape}" in
+              VM.Standard.A1.Flex|VM.Standard.E2.1.Micro)
+                echo "Allowed Always Free shape: ${shape}"
+                ;;
+              *)
+                echo "SECURITY FAILURE: prohibited compute shape ${shape}"
+                exit 1
+                ;;
+            esac
+          done
+
+
+      # ========================================================
+      # APPLY FULL PLAN; AN A1 CAPACITY FAILURE DOES NOT REMOVE E2
+      # ========================================================
+
+      - name: Terraform Apply - A1 retry
+        working-directory: ./terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -uo pipefail
+
+          if terraform apply -auto-approve a1.tfplan; then
+            echo "A1 instance is ready."
+          else
+            echo "A1 is currently unavailable; the E2 fallback remains deployed."
+            exit 1
           fi
 
 
@@ -444,20 +488,6 @@ jobs:
           echo "======================================================"
 
           terraform output
-
-
-      # ========================================================
-      # UPLOAD PLAN
-      # ========================================================
-
-      - name: Upload Terraform Plan
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: terraform-plan-${{ github.run_number }}
-          path: ./terraform/tfplan
-          retention-days: 1
-          if-no-files-found: ignore
 
 
       # ========================================================

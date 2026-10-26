@@ -1,17 +1,26 @@
-.terraform/
-.terraform.lock.hcl
-
-terraform.tfstate
-terraform.tfstate.*
+# Terraform working data and local secrets
+**/.terraform/*
 *.tfstate
 *.tfstate.*
+*.tfplan
+*.tfvars
+*.tfvars.json
+.terraform.lock.hcl
 
+# Private keys and Terraform crash logs
 *.pem
 *.key
-
 crash.log
 crash.*.log
 
-terraform.tfvars
-*.tfvars
-*.tfvars.json
+# Application secrets
+.env
+.env.*
+!.env.example
+
+# Python and editor artifacts
+__pycache__/
+*.py[cod]
+.venv/
+.idea/
+.vscode/
