@@ -464,11 +464,19 @@ jobs:
         run: |
           set -uo pipefail
 
-          if terraform apply -auto-approve a1.tfplan; then
+          set +e
+          terraform apply -auto-approve a1.tfplan 2>&1 | tee a1-apply.log
+          apply_status=${PIPESTATUS[0]}
+          set -e
+
+          if [ "${apply_status}" -eq 0 ]; then
             echo "A1 instance is ready."
+          elif grep -qi "Out of host capacity" a1-apply.log; then
+            echo "::warning::OCI currently has no A1 host capacity. The E2 fallback remains deployed and the scheduled workflow will retry A1."
+            exit 0
           else
-            echo "A1 is currently unavailable; the E2 fallback remains deployed."
-            exit 1
+            echo "A1 deployment failed for a reason other than host capacity."
+            exit "${apply_status}"
           fi
 
 
