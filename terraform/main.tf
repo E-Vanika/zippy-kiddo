@@ -296,7 +296,7 @@ resource "oci_core_instance" "e2_micro_vm" {
   shape = "VM.Standard.E2.1.Micro"
 
   create_vnic_details {
-    subnet_id       = oci_core_subnet.free_subnet.id
+    subnet_id        = oci_core_subnet.free_subnet.id
     assign_public_ip = true
     hostname_label   = "zippykiddo"
   }
