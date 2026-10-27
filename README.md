@@ -14,6 +14,7 @@ and run within Oracle Cloud Always Free limits.
 - health, readiness, version, and Prometheus metrics endpoints
 - non-root, read-only application container and a small Caddy reverse proxy
 - Terraform for OCI A1 Flex plus E2 Micro Always Free fallback
+- GitHub Actions CI → GHCR → Ansible/SSH CD with readiness and rollback
 
 The activity catalogue is deliberately labelled `project-owner-review-required`.
 It must be reviewed before this project claims that the content is human-approved

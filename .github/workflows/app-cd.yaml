@@ -1,0 +1,265 @@
+name: Application CD
+
+on:
+  workflow_run:
+    workflows: ["Application CI"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: read
+
+concurrency:
+  group: zippy-kiddo-production
+  cancel-in-progress: false
+
+env:
+  TF_IN_AUTOMATION: "true"
+  TF_INPUT: "false"
+  IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
+  GHCR_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  deploy:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+
+    env:
+      TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+      TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+      TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+      TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+      TF_VAR_region: ${{ secrets.OCI_REGION }}
+      TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+
+    steps:
+      - name: Checkout the exact tested revision
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.IMAGE_TAG }}
+
+      - name: Require the VM deployment key
+        shell: bash
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${VM_SSH_KEY}" ]; then
+            echo "::error::Missing repository or production-environment secret VM_SSH_KEY. Add the private key matching SSH_PUBLIC_KEY."
+            exit 1
+          fi
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: 1.13.1
+          terraform_wrapper: false
+
+      - name: Create temporary OCI private key
+        shell: bash
+        env:
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${OCI_PRIVATE_KEY}" > "${{ runner.temp }}/oci_api_key.pem"
+          chmod 600 "${{ runner.temp }}/oci_api_key.pem"
+
+      - name: Initialize Terraform state
+        working-directory: terraform
+        shell: bash
+        env:
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          OCI_REGION: ${{ secrets.OCI_REGION }}
+        run: |
+          set -euo pipefail
+          terraform init \
+            -backend-config="tenancy_ocid=${OCI_TENANCY_OCID}" \
+            -backend-config="user_ocid=${OCI_USER_OCID}" \
+            -backend-config="fingerprint=${OCI_FINGERPRINT}" \
+            -backend-config="private_key_path=${{ runner.temp }}/oci_api_key.pem"
+
+      - name: Temporarily allow SSH from this runner
+        working-directory: terraform
+        shell: bash
+        run: |
+          set -euo pipefail
+          runner_ip=$(curl --fail --silent --show-error https://api.ipify.org)
+          echo "Temporarily allowing the GitHub runner address through the SSH security rule."
+          terraform apply -auto-approve \
+            -target=oci_core_security_list.free_security_list \
+            -var="allowed_ssh_cidr=${runner_ip}/32"
+
+      - name: Read E2 host from Terraform state
+        id: host
+        working-directory: terraform
+        shell: bash
+        run: echo "address=$(terraform output -raw e2_micro_public_ip)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure SSH
+        shell: bash
+        env:
+          VM_HOST: ${{ steps.host.outputs.address }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${VM_SSH_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          for attempt in {1..12}; do
+            if ssh-keyscan -T 5 -H "${VM_HOST}" >> ~/.ssh/known_hosts 2>/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "::error::The E2 VM did not accept SSH after one minute. Run the bootstrap workflow after checking the SSH key."
+          exit 1
+
+      - name: Install Ansible on the runner
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: ansible==12.2.0
+
+      - name: Bootstrap or reconcile the VM
+        shell: bash
+        env:
+          VM_HOST: ${{ steps.host.outputs.address }}
+        run: |
+          set -euo pipefail
+          printf '[vm]\nzippy ansible_host=%s ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_ed25519\n' "${VM_HOST}" > ansible/inventory.ini
+          ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+
+      - name: Copy versioned runtime configuration
+        shell: bash
+        env:
+          VM_HOST: ${{ steps.host.outputs.address }}
+        run: |
+          set -euo pipefail
+          ssh ubuntu@"${VM_HOST}" 'mkdir -p /opt/zippy-kiddo'
+          scp compose.yaml Caddyfile ubuntu@"${VM_HOST}":/opt/zippy-kiddo/
+
+      - name: Authenticate VM to GHCR for this deployment
+        shell: bash
+        env:
+          VM_HOST: ${{ steps.host.outputs.address }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "${GHCR_TOKEN}" | ssh ubuntu@"${VM_HOST}" "docker login ghcr.io --username '${{ github.actor }}' --password-stdin"
+
+      - name: Deploy exact image with rollback
+        shell: bash
+        env:
+          VM_HOST: ${{ steps.host.outputs.address }}
+        run: |
+          set -euo pipefail
+          ssh ubuntu@"${VM_HOST}" \
+            "NEW_TAG='${IMAGE_TAG}' GHCR_OWNER='${GHCR_OWNER}' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd /opt/zippy-kiddo
+          GHCR_OWNER=$(printf '%s' "${GHCR_OWNER}" | tr '[:upper:]' '[:lower:]')
+          current=$(grep '^IMAGE_TAG=' .env 2>/dev/null | cut -d= -f2 || true)
+          current=${current:-latest}
+
+          set_value() {
+            key=$1
+            value=$2
+            if grep -q "^${key}=" .env 2>/dev/null; then
+              sed -i "s|^${key}=.*|${key}=${value}|" .env
+            else
+              echo "${key}=${value}" >> .env
+            fi
+          }
+
+          deploy_tag() {
+            set_value IMAGE_TAG "$1"
+            set_value GHCR_OWNER "${GHCR_OWNER}"
+            docker compose pull --quiet app caddy
+            docker compose up --detach --no-build --remove-orphans
+          }
+
+          deploy_tag "${NEW_TAG}"
+          healthy=false
+          for attempt in $(seq 1 15); do
+            if curl --fail --silent http://127.0.0.1/readyz >/dev/null; then
+              healthy=true
+              break
+            fi
+            sleep 3
+          done
+
+          if [ "${healthy}" != true ]; then
+            echo "Readiness failed; rolling back to ${current}."
+            docker compose logs --tail=100 app caddy || true
+            deploy_tag "${current}"
+            exit 1
+          fi
+          docker image prune --force
+          REMOTE
+
+      - name: Log the VM out of GHCR
+        if: always() && steps.host.outputs.address != ''
+        shell: bash
+        env:
+          VM_HOST: ${{ steps.host.outputs.address }}
+        run: ssh ubuntu@"${VM_HOST}" 'docker logout ghcr.io' || true
+
+      - name: Restore the normal SSH restriction
+        if: always()
+        working-directory: terraform
+        shell: bash
+        run: |
+          if [ -d .terraform ]; then
+            terraform apply -auto-approve -target=oci_core_security_list.free_security_list
+          fi
+
+      - name: Remove temporary credentials
+        if: always()
+        shell: bash
+        run: rm -f "${{ runner.temp }}/oci_api_key.pem" ~/.ssh/id_ed25519
+
+  smoke-test:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Read public E2 address through OCI state
+        uses: actions/checkout@v7
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: 1.13.1
+          terraform_wrapper: false
+
+      - name: Verify public deployment
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ github.event.workflow_run.head_sha || github.sha }}
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${OCI_PRIVATE_KEY}" > "${{ runner.temp }}/oci_api_key.pem"
+          chmod 600 "${{ runner.temp }}/oci_api_key.pem"
+          cd terraform
+          terraform init \
+            -backend-config="tenancy_ocid=${TF_VAR_tenancy_ocid}" \
+            -backend-config="user_ocid=${TF_VAR_user_ocid}" \
+            -backend-config="fingerprint=${TF_VAR_fingerprint}" \
+            -backend-config="private_key_path=${TF_VAR_private_key_path}"
+          host=$(terraform output -raw e2_micro_public_ip)
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 "http://${host}/readyz"
+          live=$(curl --fail --silent "http://${host}/version" | jq -r .application_version)
+          test "${live}" = "${EXPECTED_VERSION}"
+          rm -f "${TF_VAR_private_key_path}"

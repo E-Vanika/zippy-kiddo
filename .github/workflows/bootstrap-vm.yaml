@@ -1,0 +1,99 @@
+name: Bootstrap E2 VM
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: zippy-kiddo-production
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Require deployment key
+        env:
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: test -n "${VM_SSH_KEY}" || { echo "::error::Missing VM_SSH_KEY"; exit 1; }
+
+      - name: Install Ansible
+        run: |
+          python -m pip install --disable-pip-version-check --only-binary=:all: ansible==12.2.0
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v4.0.1
+        with:
+          terraform_version: 1.13.1
+          terraform_wrapper: false
+
+      - name: Initialize state and temporarily allow this runner
+        id: host
+        working-directory: terraform
+        shell: bash
+        env:
+          OCI_PRIVATE_KEY: ${{ secrets.OCI_PRIVATE_KEY }}
+          OCI_TENANCY_OCID: ${{ secrets.OCI_TENANCY_OCID }}
+          OCI_USER_OCID: ${{ secrets.OCI_USER_OCID }}
+          OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: |
+          set -euo pipefail
+          printf '%s\n' "${OCI_PRIVATE_KEY}" > "${TF_VAR_private_key_path}"
+          chmod 600 "${TF_VAR_private_key_path}"
+          terraform init \
+            -backend-config="tenancy_ocid=${OCI_TENANCY_OCID}" \
+            -backend-config="user_ocid=${OCI_USER_OCID}" \
+            -backend-config="fingerprint=${OCI_FINGERPRINT}" \
+            -backend-config="private_key_path=${TF_VAR_private_key_path}"
+          runner_ip=$(curl --fail --silent --show-error https://api.ipify.org)
+          terraform apply -auto-approve \
+            -target=oci_core_security_list.free_security_list \
+            -var="allowed_ssh_cidr=${runner_ip}/32"
+          echo "address=$(terraform output -raw e2_micro_public_ip)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure SSH and inventory
+        shell: bash
+        env:
+          VM_HOST: ${{ steps.host.outputs.address }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          set -euo pipefail
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${VM_SSH_KEY}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          for attempt in {1..12}; do
+            ssh-keyscan -T 5 -H "${VM_HOST}" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 5
+          done
+          printf '[vm]\nzippy ansible_host=%s ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_ed25519\n' "${VM_HOST}" > ansible/inventory.ini
+
+      - name: Run idempotent bootstrap playbook
+        working-directory: ansible
+        run: ansible-playbook -i inventory.ini playbook.yml
+
+      - name: Restore normal SSH restriction and clean credentials
+        if: always()
+        working-directory: terraform
+        env:
+          TF_VAR_tenancy_ocid: ${{ secrets.OCI_TENANCY_OCID }}
+          TF_VAR_user_ocid: ${{ secrets.OCI_USER_OCID }}
+          TF_VAR_fingerprint: ${{ secrets.OCI_FINGERPRINT }}
+          TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
+          TF_VAR_region: ${{ secrets.OCI_REGION }}
+          TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+        run: |
+          terraform apply -auto-approve -target=oci_core_security_list.free_security_list || true
+          rm -f "${{ runner.temp }}/oci_api_key.pem" ~/.ssh/id_ed25519

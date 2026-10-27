@@ -31,3 +31,6 @@ __pycache__/
 pytest-cache-files-*/
 .coverage
 htmlcov/
+
+# Generated Ansible inventory
+ansible/inventory.ini

@@ -9,7 +9,7 @@ The name must match exactly, including capital letters and underscores.
 
 ## 1. OCI credentials required by the infrastructure workflow
 
-Create these six **repository secrets**:
+Create these seven **repository secrets**:
 
 | Secret name | Value |
 | --- | --- |
@@ -19,6 +19,7 @@ Create these six **repository secrets**:
 | `OCI_PRIVATE_KEY` | Entire downloaded API private-key PEM, including BEGIN and END lines |
 | `OCI_REGION` | Region identifier such as `ap-hyderabad-1` |
 | `SSH_PUBLIC_KEY` | Entire **public** SSH key line, normally beginning `ssh-ed25519` |
+| `VM_SSH_KEY` | Entire private SSH key matching `SSH_PUBLIC_KEY`; required by bootstrap and CD |
 
 ### Generate the OCI API signing key
 
@@ -50,7 +51,10 @@ ssh-keygen -t ed25519 -C "zippy-kiddo" -f "$env:USERPROFILE\.ssh\zippy_kiddo"
 1. Keep `zippy_kiddo` private and local.
 2. Open `zippy_kiddo.pub` and copy the complete one-line value.
 3. Add that value as the GitHub secret `SSH_PUBLIC_KEY`.
-4. Do **not** put the private key into `SSH_PUBLIC_KEY`.
+4. Open the private `zippy_kiddo` file and add its complete contents as the
+   GitHub secret `VM_SSH_KEY`.
+5. Do **not** put the private key into `SSH_PUBLIC_KEY` or the public key into
+   `VM_SSH_KEY`.
 
 Changing `SSH_PUBLIC_KEY` updates Terraform metadata but does not reliably
 replace access on an already-created VM. Keep the private key that corresponds
@@ -114,7 +118,10 @@ instead of enabling billing or accepting any paid upgrade.
   `GITHUB_TOKEN`, and the workflows use only read permissions.
 - Do not add Facebook or Instagram tokens. They are not part of the approved
   data pipeline.
-- Do not add an OpenAI, Gemini, Anthropic, or paid inference API key.
+- `GEMINI_API_KEY` is not used by the current application or deployment. If it
+  already exists, leave it unused until a separately reviewed, free-tier model
+  experiment needs it; never inject it into the web-service container.
+- Do not add an OpenAI, Anthropic, or paid inference API key.
 - Do not put any credential in `.env.example`, Terraform files, or `plan.md`.
 
 ## 6. Verify the setup
@@ -126,6 +133,12 @@ instead of enabling billing or accepting any paid upgrade.
    Always Free VM remains deployed.
 5. Open **Actions > Application CI** and run it.
 6. Confirm that both the `test` and `container` jobs are green.
+7. A successful push CI automatically triggers **Application CD**. CD runs the
+   idempotent Ansible bootstrap, deploys the exact tested commit, checks
+   readiness, and rolls back if the check fails.
+8. **Bootstrap E2 VM** remains available as a manual recovery workflow; normal
+   deployments do not require you to run it separately or install anything on
+   your laptop.
 
 GitHub hides secret values after creation, so keep an offline record of which
 account owns each credential and its rotation date—never the values in this

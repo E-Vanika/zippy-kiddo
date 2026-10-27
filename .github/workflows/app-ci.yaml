@@ -11,6 +11,9 @@ on:
       - "compose.yaml"
       - "Caddyfile"
       - ".github/workflows/app-ci.yaml"
+      - ".github/workflows/app-cd.yaml"
+      - ".github/workflows/bootstrap-vm.yaml"
+      - "ansible/**"
   push:
     branches: [main]
     paths:
@@ -21,10 +24,15 @@ on:
       - "compose.yaml"
       - "Caddyfile"
       - ".github/workflows/app-ci.yaml"
+      - ".github/workflows/app-cd.yaml"
+      - ".github/workflows/bootstrap-vm.yaml"
+      - "ansible/**"
   workflow_dispatch:
 
 permissions:
   contents: read
+  packages: write
+  security-events: write
 
 concurrency:
   group: app-ci-${{ github.ref }}
@@ -52,20 +60,33 @@ jobs:
       - name: Compile Python sources
         run: python -m compileall -q zippy_kiddo
 
-  container:
+  build-and-push:
+    needs: test
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
 
+      - name: Compute lowercase image name
+        shell: bash
+        run: echo "IMAGE_NAME=ghcr.io/$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')/zippy-kiddo" >> "$GITHUB_ENV"
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Build production image
-        run: docker build --tag zippy-kiddo:${{ github.sha }} .
+        run: docker build --tag ${{ env.IMAGE_NAME }}:${{ github.sha }} --tag ${{ env.IMAGE_NAME }}:latest .
 
       - name: Smoke-test production image
         shell: bash
         run: |
           set -euo pipefail
-          container_id=$(docker run --detach --publish 127.0.0.1:8000:8000 zippy-kiddo:${{ github.sha }})
+          container_id=$(docker run --detach --publish 127.0.0.1:8000:8000 ${{ env.IMAGE_NAME }}:${{ github.sha }})
           trap 'docker logs "${container_id}"; docker rm --force "${container_id}"' EXIT
 
           for attempt in {1..20}; do
@@ -76,3 +97,18 @@ jobs:
           done
 
           exit 1
+
+      - name: Scan production image
+        uses: aquasecurity/trivy-action@v0.36.0
+        with:
+          version: v0.76.0
+          image-ref: ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      - name: Push immutable and latest tags
+        run: |
+          docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
+          docker push ${{ env.IMAGE_NAME }}:latest
