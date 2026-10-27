@@ -12,56 +12,30 @@
       ansible.builtin.command: cloud-init status --wait
       changed_when: false
 
-    - name: Create Docker keyring directory
+    # Remove a partially configured third-party Docker repository left by an
+    # interrupted bootstrap. Ubuntu's signed packages are sufficient here and
+    # integrate with unattended security updates.
+    - name: Remove third-party Docker apt sources
       ansible.builtin.file:
-        path: /etc/apt/keyrings
-        state: directory
-        # APT downloads repository metadata as the unprivileged _apt user,
-        # which must be able to traverse this directory.
-        mode: "0755"
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - /etc/apt/sources.list.d/docker.sources
+        - /etc/apt/sources.list.d/docker.list
 
-    - name: Download Docker signing key
-      ansible.builtin.get_url:
-        url: https://download.docker.com/linux/ubuntu/gpg
-        dest: /etc/apt/keyrings/docker.asc
-        # Public verification keys are not secrets and must be readable by APT.
-        mode: "0644"
-
-    - name: Configure Docker repository
-      ansible.builtin.deb822_repository:
-        name: docker
-        types: deb
-        uris: https://download.docker.com/linux/ubuntu
-        suites: "{{ ansible_distribution_release }}"
-        components: stable
-        architectures: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
-        signed_by: /etc/apt/keyrings/docker.asc
-        state: present
-
-    # Repair the keyring and repository before the first apt cache refresh.
-    # This ordering also recovers cleanly from a previously interrupted run.
-    - name: Install base packages
+    - name: Install base packages and Docker from Ubuntu
       ansible.builtin.apt:
         name:
           - ca-certificates
           - curl
-          - gnupg
+          - docker.io
+          - docker-compose-v2
           - ufw
           - unattended-upgrades
         state: present
         update_cache: true
-        cache_valid_time: 3600
+        cache_valid_time: 0
         lock_timeout: 300
-
-    - name: Install Docker Engine and Compose
-      ansible.builtin.apt:
-        name:
-          - docker-ce
-          - docker-ce-cli
-          - containerd.io
-          - docker-compose-plugin
-        state: present
-        update_cache: true
 
     - name: Add ubuntu to the Docker group
       ansible.builtin.user:
