@@ -21,7 +21,13 @@ crash.*.log
 # Python and editor artifacts
 __pycache__/
 *.py[cod]
+*.egg-info/
 .venv/
 .idea/
 .vscode/
-./plan.md
+
+# Test and coverage artifacts
+.pytest_cache/
+pytest-cache-files-*/
+.coverage
+htmlcov/

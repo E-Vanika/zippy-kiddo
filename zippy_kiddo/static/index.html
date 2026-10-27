@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Zippy Kiddo</title>
+  <style>
+    :root { color-scheme: light; --ink:#17211b; --muted:#58645d; --paper:#fffdf6; --leaf:#227a52; --sun:#f3b83f; --line:#dce4dd; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family:ui-rounded,"Segoe UI",sans-serif; color:var(--ink); background:linear-gradient(135deg,#eaf8ee,#fff6d8); min-height:100vh; }
+    main { width:min(980px,calc(100% - 28px)); margin:auto; padding:36px 0 64px; }
+    header { margin-bottom:24px; }
+    h1 { font-size:clamp(2.3rem,7vw,4.8rem); letter-spacing:-.05em; margin:0; }
+    header p { max-width:680px; color:var(--muted); font-size:1.08rem; line-height:1.6; }
+    form,.card,.notice { background:rgba(255,253,246,.94); border:1px solid var(--line); border-radius:22px; box-shadow:0 18px 60px rgba(28,66,45,.09); }
+    form { padding:22px; display:grid; gap:18px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:14px; }
+    label,legend { font-weight:700; }
+    select,input[type=number] { width:100%; margin-top:7px; padding:11px; border:1px solid #b9c5bc; border-radius:10px; background:white; font:inherit; }
+    fieldset { border:0; padding:0; margin:0; }
+    .materials { display:flex; flex-wrap:wrap; gap:8px; margin-top:10px; }
+    .materials label { font-weight:500; border:1px solid var(--line); border-radius:999px; padding:7px 10px; background:white; }
+    button { border:0; border-radius:12px; padding:13px 18px; background:var(--leaf); color:white; font:700 1rem inherit; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:wait; }
+    #results { display:grid; gap:14px; margin-top:22px; }
+    .card { padding:20px; }
+    .card h2 { margin:0 0 8px; }
+    .meta { color:var(--muted); font-size:.92rem; }
+    .why { background:#edf8f0; border-radius:12px; padding:10px 14px; }
+    .safety { border-left:5px solid var(--sun); padding-left:12px; }
+    .notice { padding:14px 18px; margin-top:16px; color:var(--muted); }
+    .error { color:#9f1d20; }
+    footer { color:var(--muted); margin-top:24px; font-size:.9rem; }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Zippy Kiddo</h1>
+    <p>Choose the time, place, and materials you have. We filter for age and supervision first, then suggest safe activities from a reviewed catalogue.</p>
+  </header>
+  <form id="activity-form">
+    <div class="grid">
+      <label>Child's age
+        <input name="age" type="number" min="3" max="12" value="6" required>
+      </label>
+      <label>Available time
+        <select name="duration_minutes"><option>5</option><option>10</option><option>15</option><option selected>30</option><option>45</option><option>60</option></select>
+      </label>
+      <label>Setting
+        <select name="setting"><option value="indoor">Indoor</option><option value="outdoor">Outdoor</option></select>
+      </label>
+      <label>Supervision available
+        <select name="supervision"><option value="independent">Independent</option><option value="nearby" selected>Nearby</option><option value="continuous">Continuous</option></select>
+      </label>
+      <label>Energy level
+        <select name="energy"><option value="calm">Calm</option><option value="moderate" selected>Moderate</option><option value="active">Active</option></select>
+      </label>
+    </div>
+    <fieldset>
+      <legend>Materials available</legend>
+      <div class="materials" id="materials"></div>
+    </fieldset>
+    <button type="submit">Find three activities</button>
+  </form>
+  <div class="notice">Recommendations support—not replace—adult judgment. Check the environment, materials, and the child's abilities before starting.</div>
+  <section id="results" aria-live="polite"></section>
+  <footer>No name, birthday, photograph, precise location, or account is requested.</footer>
+</main>
+<script>
+const materialOptions = ["paper","pencil","crayons","toys","socks","pillows","books","glue stick","stickers","flashlight","plastic cups","masking tape","toy cars","cloth","household objects","sidewalk chalk","music","pre-cut paper shapes"];
+const materialBox = document.querySelector("#materials");
+materialOptions.forEach(item => {
+  const label = document.createElement("label");
+  label.innerHTML = `<input type="checkbox" value="${item}"> ${item}`;
+  materialBox.appendChild(label);
+});
+const escapeHtml = value => String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
+document.querySelector("#activity-form").addEventListener("submit", async event => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = form.querySelector("button");
+  const results = document.querySelector("#results");
+  button.disabled = true;
+  results.innerHTML = "<p>Finding safe matches…</p>";
+  const data = new FormData(form);
+  const payload = {
+    age: Number(data.get("age")), duration_minutes: Number(data.get("duration_minutes")),
+    setting: data.get("setting"), supervision: data.get("supervision"), energy: data.get("energy"),
+    materials: [...materialBox.querySelectorAll("input:checked")].map(input => input.value)
+  };
+  try {
+    const response = await fetch("/api/v1/recommendations", {method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify(payload)});
+    if (!response.ok) throw new Error(`Request failed (${response.status})`);
+    const body = await response.json();
+    if (!body.recommendations.length) {
+      results.innerHTML = `<div class="card"><h2>No safe match yet</h2><p>${body.relaxable_constraints.map(escapeHtml).join(" ")}</p></div>`;
+    } else {
+      results.innerHTML = body.recommendations.map(item => `<article class="card">
+        <h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.description)}</p>
+        <p class="meta">${item.duration_minutes} min · ${escapeHtml(item.supervision)} supervision · setup ${item.setup_minutes} min · cleanup ${item.cleanup_minutes} min</p>
+        <div class="why"><strong>Why it matches</strong><ul>${item.why_it_matches.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ul></div>
+        <h3>Steps</h3><ol>${item.steps.map(x=>`<li>${escapeHtml(x)}</li>`).join("")}</ol>
+        <p><strong>Materials:</strong> ${item.materials.length ? item.materials.map(escapeHtml).join(", ") : "None"}</p>
+        <p class="safety"><strong>Safety:</strong> ${escapeHtml(item.safety_note)}</p>
+      </article>`).join("");
+    }
+  } catch (error) { results.innerHTML = `<p class="error">${escapeHtml(error.message)}</p>`; }
+  finally { button.disabled = false; }
+});
+</script>
+</body>
+</html>

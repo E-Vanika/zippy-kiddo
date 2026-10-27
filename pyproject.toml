@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zippy-kiddo"
+version = "0.1.0"
+description = "Safe, deterministic activity recommendations for children ages 3-12"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115,<1",
+  "prometheus-client>=0.21,<1",
+  "pydantic>=2.10,<3",
+  "uvicorn[standard]>=0.34,<1",
+]
+
+[project.optional-dependencies]
+test = [
+  "httpx>=0.28,<1",
+  "pytest>=8,<10",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+include = ["zippy_kiddo*"]
+
+[tool.setuptools.package-data]
+zippy_kiddo = ["data/*.json", "static/*.html"]

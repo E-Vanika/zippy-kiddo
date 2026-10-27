@@ -1,0 +1,78 @@
+name: Application CI
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "zippy_kiddo/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "Dockerfile"
+      - "compose.yaml"
+      - "Caddyfile"
+      - ".github/workflows/app-ci.yaml"
+  push:
+    branches: [main]
+    paths:
+      - "zippy_kiddo/**"
+      - "tests/**"
+      - "pyproject.toml"
+      - "Dockerfile"
+      - "compose.yaml"
+      - "Caddyfile"
+      - ".github/workflows/app-ci.yaml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: app-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install application and test dependencies
+        run: python -m pip install --disable-pip-version-check -e ".[test]"
+
+      - name: Run tests
+        run: python -m pytest
+
+      - name: Compile Python sources
+        run: python -m compileall -q zippy_kiddo
+
+  container:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Build production image
+        run: docker build --tag zippy-kiddo:${{ github.sha }} .
+
+      - name: Smoke-test production image
+        shell: bash
+        run: |
+          set -euo pipefail
+          container_id=$(docker run --detach --publish 127.0.0.1:8000:8000 zippy-kiddo:${{ github.sha }})
+          trap 'docker logs "${container_id}"; docker rm --force "${container_id}"' EXIT
+
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8000/healthz; then
+              exit 0
+            fi
+            sleep 1
+          done
+
+          exit 1

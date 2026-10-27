@@ -1,0 +1,37 @@
+services:
+  app:
+    build:
+      context: .
+    restart: unless-stopped
+    environment:
+      APP_VERSION: ${APP_VERSION:-local}
+      MODEL_REVISION: ${MODEL_REVISION:-}
+    expose:
+      - "8000"
+    mem_limit: 320m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+
+  caddy:
+    image: caddy:2.10-alpine
+    restart: unless-stopped
+    depends_on:
+      app:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    mem_limit: 96m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+

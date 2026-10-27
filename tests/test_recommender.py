@@ -1,0 +1,58 @@
+from zippy_kiddo.catalog import load_catalogue
+from zippy_kiddo.recommender import is_eligible, recommend
+from zippy_kiddo.schemas import Energy, RecommendationRequest, Setting, Supervision
+
+
+def request_for(**overrides: object) -> RecommendationRequest:
+    values: dict[str, object] = {
+        "age": 6,
+        "duration_minutes": 30,
+        "setting": Setting.INDOOR,
+        "supervision": Supervision.NEARBY,
+        "energy": Energy.MODERATE,
+        "materials": [],
+    }
+    values.update(overrides)
+    return RecommendationRequest(**values)
+
+
+def test_normal_request_returns_three_deterministic_recommendations() -> None:
+    _, activities = load_catalogue()
+    payload = request_for()
+
+    first, _ = recommend(activities, payload)
+    second, _ = recommend(activities, payload)
+
+    assert len(first) == 3
+    assert [item.activity_id for item in first] == [
+        item.activity_id for item in second
+    ]
+
+
+def test_age_is_a_hard_constraint() -> None:
+    _, activities = load_catalogue()
+    activity = next(item for item in activities if item.id == "mini-comic")
+
+    assert not is_eligible(activity, request_for(age=6, materials=["paper", "pencil"]))
+
+
+def test_supervision_is_a_hard_constraint() -> None:
+    _, activities = load_catalogue()
+    activity = next(item for item in activities if item.id == "pillow-path")
+
+    assert not is_eligible(
+        activity,
+        request_for(
+            age=5,
+            supervision=Supervision.NEARBY,
+            materials=["pillows"],
+        ),
+    )
+
+
+def test_required_materials_are_a_hard_constraint() -> None:
+    _, activities = load_catalogue()
+    activity = next(item for item in activities if item.id == "cup-tower")
+
+    assert not is_eligible(activity, request_for(age=8))
+    assert is_eligible(activity, request_for(age=8, materials=["plastic cups"]))

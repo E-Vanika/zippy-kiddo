@@ -10,21 +10,27 @@ on:
   pull_request:
     branches:
       - main
+    paths:
+      - "terraform/**"
+      - ".github/workflows/infra-pipeline.yaml"
 
   # Deploy changes merged to main
   push:
     branches:
       - main
+    paths:
+      - "terraform/**"
+      - ".github/workflows/infra-pipeline.yaml"
 
   # Manual deployment
   workflow_dispatch:
 
-  # Retry A1 capacity approximately every 10 minutes
+  # Retry A1 capacity hourly, away from the busiest minute boundary
   #
   # GitHub Actions scheduled workflows use UTC.
   #
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "17 * * * *"
 
 
 # ============================================================

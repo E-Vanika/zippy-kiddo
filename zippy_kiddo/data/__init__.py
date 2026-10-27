@@ -1,0 +1,1 @@
+"""Versioned activity catalogue data."""
