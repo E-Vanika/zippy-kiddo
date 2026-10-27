@@ -1,5 +1,7 @@
 name: Application CD
 
+# Deploy only an immutable image that completed Application CI successfully.
+
 on:
   workflow_run:
     workflows: ["Application CI"]
