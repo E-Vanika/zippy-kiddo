@@ -63,3 +63,7 @@ The deployment supports only `VM.Standard.E2.1.Micro` and
 `VM.Standard.A1.Flex`. The Terraform workflow verifies those shape names and
 does not fall back to a paid compute shape. A1 capacity is retried hourly while
 the E2 instance remains the dependable Always Free baseline.
+
+For the exact credential names and setup screens, follow
+[docs/credentials-setup.md](docs/credentials-setup.md). The running application
+does not currently require Hugging Face, Kaggle, YouTube, or any paid API.
