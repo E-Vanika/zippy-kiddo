@@ -138,7 +138,15 @@ jobs:
         run: |
           set -euo pipefail
           printf '[vm]\nzippy ansible_host=%s ansible_user=ubuntu ansible_ssh_private_key_file=~/.ssh/id_ed25519\n' "${VM_HOST}" > ansible/inventory.ini
-          ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+          set +e
+          ansible-playbook -i ansible/inventory.ini ansible/playbook.yml 2>&1 | tee "${RUNNER_TEMP}/ansible.log"
+          playbook_status=${PIPESTATUS[0]}
+          set -e
+          if [ "${playbook_status}" -ne 0 ]; then
+            diagnostic=$(tail -n 80 "${RUNNER_TEMP}/ansible.log" | sed ':a;N;$!ba;s/%/%25/g;s/\r/%0D/g;s/\n/%0A/g')
+            echo "::error title=Ansible bootstrap failed::${diagnostic}"
+            exit "${playbook_status}"
+          fi
 
       - name: Copy versioned runtime configuration
         shell: bash
