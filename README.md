@@ -7,9 +7,13 @@ materials already at home.
 
 ## Live application
 
-Zippy Kiddo is deployed on Oracle Cloud Infrastructure. The current public URL
-is published in the **Live application** notice and job summary of the latest
-successful [Application CD workflow](../../actions/workflows/app-cd.yaml).
+Zippy Kiddo is deployed on Oracle Cloud Infrastructure:
+
+**[Open Zippy Kiddo](http://129.225.85.54)**
+
+The current public URL is also published in the **Live application** notice and
+job summary of the latest successful
+[Application CD workflow](../../actions/workflows/app-cd.yaml).
 
 The production service exposes:
 
