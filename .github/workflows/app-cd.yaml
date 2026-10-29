@@ -106,7 +106,11 @@ jobs:
         id: host
         working-directory: terraform
         shell: bash
-        run: echo "address=$(terraform output -raw e2_micro_public_ip)" >> "$GITHUB_OUTPUT"
+        run: |
+          host=$(terraform output -raw e2_micro_public_ip)
+          echo "address=${host}" >> "$GITHUB_OUTPUT"
+          echo "::notice title=Live application::http://${host}"
+          printf '## Live application\n\nhttp://%s\n' "${host}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure SSH
         shell: bash
@@ -118,6 +122,13 @@ jobs:
           install -m 700 -d ~/.ssh
           printf '%s\n' "${VM_SSH_KEY}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          {
+            echo "Host *"
+            echo "  ServerAliveInterval 15"
+            echo "  ServerAliveCountMax 4"
+            echo "  ConnectTimeout 10"
+          } > ~/.ssh/config
+          chmod 600 ~/.ssh/config
           for attempt in {1..12}; do
             if ssh-keyscan -T 5 -H "${VM_HOST}" >> ~/.ssh/known_hosts 2>/dev/null; then
               exit 0
@@ -191,7 +202,7 @@ jobs:
           deploy_tag() {
             set_value IMAGE_TAG "$1"
             set_value GHCR_OWNER "${GHCR_OWNER}"
-            docker compose pull --quiet app caddy
+            timeout 5m docker compose pull --quiet app caddy
             docker compose up --detach --no-build --remove-orphans
           }
 

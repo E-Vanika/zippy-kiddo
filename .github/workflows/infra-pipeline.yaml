@@ -58,7 +58,9 @@ env:
 # ============================================================
 
 concurrency:
-  group: oci-production-terraform
+  # CD also changes the production security list temporarily. Use one lock for
+  # every workflow that can mutate the shared OCI state.
+  group: zippy-kiddo-production
   cancel-in-progress: false
 
 
