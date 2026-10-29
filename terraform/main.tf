@@ -314,7 +314,7 @@ resource "oci_core_instance" "e2_micro_vm" {
   freeform_tags = {
     ManagedBy   = "Terraform"
     Workload    = "Zippy-Kiddo"
-    Environment = "Portfolio"
+    Environment = "Production"
     Shape       = "VM.Standard.E2.1.Micro"
     Tier        = "Always-Free"
   }

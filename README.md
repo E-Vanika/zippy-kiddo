@@ -1,70 +1,103 @@
 # Zippy Kiddo
 
-Zippy Kiddo is a zero-cost, safety-first activity recommender for parents of
-children ages 3–12. It is also an AI SRE/DevOps portfolio project: the system is
-designed to stay useful when a model is unavailable, expose operational health,
-and run within Oracle Cloud Always Free limits.
+Zippy Kiddo helps parents quickly find safe, practical activities that keep
+children ages 3–12 engaged while the parent focuses on work. Suggestions adapt
+to the child's age, available time, energy level, space, supervision, and
+materials already at home.
 
-## Current state
+## Live application
 
-- FastAPI service and responsive web interface
-- 32 original draft activities with hard age, time, setting, material, and
-  supervision filters
-- deterministic ranking fallback (no external API or paid service required)
-- health, readiness, version, and Prometheus metrics endpoints
-- non-root, read-only application container and a small Caddy reverse proxy
-- Terraform for OCI A1 Flex plus E2 Micro Always Free fallback
-- GitHub Actions CI → GHCR → Ansible/SSH CD with readiness and rollback
+Zippy Kiddo is deployed on Oracle Cloud Infrastructure. The current public URL
+is published in the **Live application** notice and job summary of the latest
+successful [Application CD workflow](../../actions/workflows/app-cd.yaml).
 
-The activity catalogue is deliberately labelled `project-owner-review-required`.
-It must be reviewed before this project claims that the content is human-approved
-or ready for public use.
+The production service exposes:
+
+- `/` — activity recommendation interface
+- `/healthz` — process health
+- `/readyz` — deployment readiness
+- `/version` — deployed application version
+- `/docs` — interactive API documentation
+
+## Product capabilities
+
+- Filters activities by age, duration, location, energy, supervision, and
+  available materials.
+- Returns useful suggestions without requiring an external AI service.
+- Applies deterministic safety rules before presenting recommendations.
+- Avoids collecting a child's name, contact information, precise location, or
+  other unnecessary personal data.
+- Provides a responsive web interface and a documented JSON API.
+
+## Architecture
+
+The FastAPI application serves the web interface and recommendation API from a
+container behind Caddy. Curated activity data provides a reliable baseline;
+model-assisted ranking can be introduced behind the same safety and fallback
+boundaries without making the service dependent on a model provider.
+
+Production runs on an OCI Always Free E2 Micro instance. Terraform manages the
+network and compute resources, Ansible reconciles the host, GitHub Actions
+builds and deploys immutable container images, and GHCR stores those images.
+
+## Reliability and delivery
+
+- CI runs formatting, linting, type, security, dependency, and automated tests.
+- Container images are scanned and addressed by the tested Git commit SHA.
+- CD deploys the exact image that passed CI, checks readiness, and rolls back
+  automatically when a release is unhealthy.
+- Public smoke tests verify both readiness and the deployed version.
+- Scheduled infrastructure runs retry OCI A1 capacity while the E2 Micro
+  production service remains available.
+- Terraform remote state and restricted, temporary SSH access keep deployment
+  changes repeatable and auditable.
 
 ## Run locally
 
-With Python 3.12:
+Requirements: Python 3.12 or Docker with Compose.
 
 ```bash
 python -m venv .venv
 python -m pip install -e ".[test]"
-python -m pytest
 uvicorn zippy_kiddo.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000`.
+Then open <http://127.0.0.1:8000>.
 
-Or use containers:
+With containers:
 
 ```bash
 docker compose up --build
 ```
+
+Then open <http://127.0.0.1>.
 
 ## API example
 
 ```bash
 curl -X POST http://127.0.0.1:8000/api/v1/recommendations \
   -H "Content-Type: application/json" \
-  -d '{"age":6,"duration_minutes":30,"setting":"indoor","supervision":"nearby","energy":"moderate","materials":[]}'
+  -d '{
+    "age": 7,
+    "duration_minutes": 30,
+    "setting": "indoor",
+    "energy": "moderate",
+    "supervision": "nearby",
+    "materials": ["paper", "pencil"]
+  }'
 ```
 
-The API collects no name, email, precise location, photo, or other child
-identity data. Invalid or unknown input fields are rejected.
+## Repository layout
 
-## Reliability design
+- `zippy_kiddo/` — application, recommendation logic, and web interface
+- `tests/` — unit and API tests
+- `terraform/` — OCI Always Free infrastructure
+- `ansible/` — repeatable VM configuration
+- `.github/workflows/` — continuous integration and deployment
+- `data/` — versioned activity catalogue
 
-`/healthz` reports process liveness. `/readyz` separately reports whether the
-optional model is available and confirms that the deterministic fallback is
-ready. `/metrics` is available inside the application network but blocked by
-Caddy from public access. See [plan.md](plan.md) for the product specification,
-safety gates, ML plan, SLOs, and interview evidence map.
+## Cost and safety boundaries
 
-## Cost boundary
-
-The deployment supports only `VM.Standard.E2.1.Micro` and
-`VM.Standard.A1.Flex`. The Terraform workflow verifies those shape names and
-does not fall back to a paid compute shape. A1 capacity is retried hourly while
-the E2 instance remains the dependable Always Free baseline.
-
-For the exact credential names and setup screens, follow
-[docs/credentials-setup.md](docs/credentials-setup.md). The running application
-does not currently require Hugging Face, Kaggle, YouTube, or any paid API.
+Infrastructure is constrained to OCI Always Free resources. Workflows do not
+fall back to paid compute shapes. External API credentials are stored only as
+GitHub Actions secrets and are never committed to the repository.

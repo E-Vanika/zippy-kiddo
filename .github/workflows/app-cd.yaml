@@ -275,4 +275,13 @@ jobs:
           curl --fail --silent --show-error --retry 5 --retry-delay 3 "http://${host}/readyz"
           live=$(curl --fail --silent "http://${host}/version" | jq -r .application_version)
           test "${live}" = "${EXPECTED_VERSION}"
+          application_url="http://${host}"
+          echo "::notice title=Live application::${application_url}"
+          {
+            echo "## Live application"
+            echo
+            echo "${application_url}"
+            echo
+            echo "Deployed version: \`${live}\`"
+          } >> "${GITHUB_STEP_SUMMARY}"
           rm -f "${TF_VAR_private_key_path}"
