@@ -9,7 +9,7 @@ materials already at home.
 
 Zippy Kiddo is deployed on Oracle Cloud Infrastructure:
 
-**[Open Zippy Kiddo](http://129.225.85.54)**
+**[Open Zippy Kiddo](https://zippy-kiddo.129-225-85-54.sslip.io)**
 
 The current public URL is also published in the **Live application** notice and
 job summary of the latest successful
@@ -27,7 +27,10 @@ The production service exposes:
 
 - Filters activities by age, duration, location, energy, supervision, and
   available materials.
-- Returns useful suggestions without requiring an external AI service.
+- Returns up to ten ranked suggestions and prioritizes activities that use the
+  selected materials.
+- Includes a catalogue-backed corner assistant without requiring an external
+  AI service.
 - Applies deterministic safety rules before presenting recommendations.
 - Avoids collecting a child's name, contact information, precise location, or
   other unnecessary personal data.
@@ -39,6 +42,21 @@ The FastAPI application serves the web interface and recommendation API from a
 container behind Caddy. Curated activity data provides a reliable baseline;
 model-assisted ranking can be introduced behind the same safety and fallback
 boundaries without making the service dependent on a model provider.
+
+### Recommendation intelligence
+
+The production service currently uses deterministic eligibility and ranking
+rules, not a trained model. Age, time, setting, supervision, and required
+materials are hard safety constraints. Energy, time fit, and use of selected
+materials determine ranking. `/api/v1/model-info` reports this state so the
+service never presents an empty model revision as trained AI.
+
+Kaggle and Hugging Face credentials are reserved for the next model lifecycle:
+approved, non-personal preference labels are used for free Kaggle training;
+evaluation and safety gates must pass before a versioned artifact is published
+to Hugging Face. OCI will load an explicit immutable revision while retaining
+the deterministic engine as its fallback. No model is published until genuine
+labels and acceptance thresholds exist.
 
 Production runs on an OCI Always Free E2 Micro instance. Terraform manages the
 network and compute resources, Ansible reconciles the host, GitHub Actions

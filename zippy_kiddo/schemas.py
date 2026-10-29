@@ -29,6 +29,7 @@ class RecommendationRequest(BaseModel):
     supervision: Supervision
     energy: Energy
     materials: list[str] = Field(default_factory=list, max_length=20)
+    result_limit: int = Field(default=6, ge=1, le=10)
 
     @field_validator("duration_minutes")
     @classmethod
@@ -95,3 +96,24 @@ class RecommendationResponse(BaseModel):
     model_revision: str | None
     recommendations: list[Recommendation]
     relaxable_constraints: list[str]
+
+
+class ChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: str = Field(min_length=1, max_length=500)
+    context: RecommendationRequest | None = None
+
+    @field_validator("message")
+    @classmethod
+    def normalise_message(cls, value: str) -> str:
+        cleaned = " ".join(value.strip().split())
+        if not cleaned:
+            raise ValueError("message must not be blank")
+        return cleaned
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    assistant_mode: str
+    suggested_activities: list[str] = Field(default_factory=list)

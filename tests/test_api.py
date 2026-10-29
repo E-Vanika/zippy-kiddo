@@ -33,7 +33,7 @@ def test_recommendation_contract() -> None:
     body = response.json()
     assert body["ranking_mode"] == "deterministic"
     assert body["degraded"] is True
-    assert len(body["recommendations"]) == 3
+    assert len(body["recommendations"]) == 6
     assert response.headers["X-Request-ID"]
 
 
@@ -52,3 +52,24 @@ def test_metrics_are_exposed_for_internal_monitoring() -> None:
 
     assert response.status_code == 200
     assert "zippy_http_requests_total" in response.text
+
+
+def test_chat_uses_materials_with_current_filters() -> None:
+    context = valid_payload()
+    response = client.post(
+        "/api/v1/chat",
+        json={"message": "What can we do with plastic cups?", "context": context},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["assistant_mode"] == "catalogue"
+    assert "Cup Tower Lab" in body["suggested_activities"]
+
+
+def test_model_info_does_not_claim_an_unloaded_model() -> None:
+    response = client.get("/api/v1/model-info")
+
+    assert response.status_code == 200
+    assert response.json()["ranking_mode"] == "deterministic"
+    assert response.json()["trained_model_loaded"] is False

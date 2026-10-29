@@ -16,14 +16,14 @@ def request_for(**overrides: object) -> RecommendationRequest:
     return RecommendationRequest(**values)
 
 
-def test_normal_request_returns_three_deterministic_recommendations() -> None:
+def test_normal_request_returns_six_deterministic_recommendations() -> None:
     _, activities = load_catalogue()
     payload = request_for()
 
     first, _ = recommend(activities, payload)
     second, _ = recommend(activities, payload)
 
-    assert len(first) == 3
+    assert len(first) == 6
     assert [item.activity_id for item in first] == [
         item.activity_id for item in second
     ]
@@ -56,3 +56,24 @@ def test_required_materials_are_a_hard_constraint() -> None:
 
     assert not is_eligible(activity, request_for(age=8))
     assert is_eligible(activity, request_for(age=8, materials=["plastic cups"]))
+
+
+def test_selected_material_changes_the_top_recommendation() -> None:
+    _, activities = load_catalogue()
+
+    without_cups, _ = recommend(activities, request_for(age=8))
+    with_cups, _ = recommend(
+        activities, request_for(age=8, materials=["plastic cups"])
+    )
+
+    assert without_cups[0].activity_id != "cup-tower"
+    assert with_cups[0].activity_id == "cup-tower"
+
+
+def test_result_limit_is_respected() -> None:
+    _, activities = load_catalogue()
+    three, _ = recommend(activities, request_for(result_limit=3))
+    nine, _ = recommend(activities, request_for(result_limit=9))
+
+    assert len(three) == 3
+    assert 3 < len(nine) <= 9

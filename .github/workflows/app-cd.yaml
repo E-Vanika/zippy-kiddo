@@ -22,6 +22,7 @@ env:
   TF_INPUT: "false"
   IMAGE_TAG: ${{ github.event.workflow_run.head_sha || github.sha }}
   GHCR_OWNER: ${{ github.repository_owner }}
+  PUBLIC_HOST: zippy-kiddo.129-225-85-54.sslip.io
 
 jobs:
   deploy:
@@ -109,8 +110,8 @@ jobs:
         run: |
           host=$(terraform output -raw e2_micro_public_ip)
           echo "address=${host}" >> "$GITHUB_OUTPUT"
-          echo "::notice title=Live application::http://${host}"
-          printf '## Live application\n\nhttp://%s\n' "${host}" >> "$GITHUB_STEP_SUMMARY"
+          echo "::notice title=Live application::https://${PUBLIC_HOST}"
+          printf '## Live application\n\nhttps://%s\n' "${PUBLIC_HOST}" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Configure SSH
         shell: bash
@@ -209,7 +210,7 @@ jobs:
           deploy_tag "${NEW_TAG}"
           healthy=false
           for attempt in $(seq 1 15); do
-            if curl --fail --silent http://127.0.0.1/readyz >/dev/null; then
+            if docker compose exec -T app python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/readyz', timeout=2)"; then
               healthy=true
               break
             fi
@@ -272,6 +273,7 @@ jobs:
           TF_VAR_private_key_path: ${{ runner.temp }}/oci_api_key.pem
           TF_VAR_region: ${{ secrets.OCI_REGION }}
           TF_VAR_ssh_public_key: ${{ secrets.SSH_PUBLIC_KEY }}
+          PUBLIC_HOST: ${{ env.PUBLIC_HOST }}
         run: |
           set -euo pipefail
           printf '%s\n' "${OCI_PRIVATE_KEY}" > "${{ runner.temp }}/oci_api_key.pem"
@@ -283,10 +285,10 @@ jobs:
             -backend-config="fingerprint=${TF_VAR_fingerprint}" \
             -backend-config="private_key_path=${TF_VAR_private_key_path}"
           host=$(terraform output -raw e2_micro_public_ip)
-          curl --fail --silent --show-error --retry 5 --retry-delay 3 "http://${host}/readyz"
-          live=$(curl --fail --silent "http://${host}/version" | jq -r .application_version)
+          curl --fail --silent --show-error --retry 10 --retry-delay 5 "https://${PUBLIC_HOST}/readyz"
+          live=$(curl --fail --silent "https://${PUBLIC_HOST}/version" | jq -r .application_version)
           test "${live}" = "${EXPECTED_VERSION}"
-          application_url="http://${host}"
+          application_url="https://${PUBLIC_HOST}"
           echo "::notice title=Live application::${application_url}"
           {
             echo "## Live application"

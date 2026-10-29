@@ -59,12 +59,18 @@ def rank_activity(
     optional_match_count = len(
         set(activity.optional_materials).intersection(request.materials)
     )
-    score += min(optional_match_count, 2) * 0.5
+    required_match_count = len(activity.required_materials)
+    score += min(required_match_count, 3) * 2.5
+    score += min(optional_match_count, 2) * 1.0
 
     if not activity.required_materials:
         reasons.append("needs no special materials")
     else:
-        reasons.append("uses only the materials you selected")
+        matched = ", ".join(activity.required_materials)
+        reasons.append(f"uses your selected materials: {matched}")
+
+    if optional_match_count:
+        reasons.append("also uses optional materials you have")
 
     return RankedActivity(activity=activity, score=score, reasons=tuple(reasons))
 
@@ -93,11 +99,11 @@ def recommend(
             safety_note=item.activity.safety_note,
             score=round(item.score, 3),
         )
-        for item in ranked[:3]
+        for item in ranked[: request.result_limit]
     ]
 
     relaxable: list[str] = []
-    if len(recommendations) < 3:
+    if len(recommendations) < request.result_limit:
         relaxable.extend(
             [
                 "Select a longer available time.",

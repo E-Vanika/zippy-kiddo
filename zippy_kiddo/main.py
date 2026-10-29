@@ -8,13 +8,19 @@ from fastapi.responses import HTMLResponse
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from . import __version__
+from .assistant import answer_chat
 from .catalog import load_catalogue
 from .recommender import recommend
-from .schemas import RecommendationRequest, RecommendationResponse
+from .schemas import (
+    ChatRequest,
+    ChatResponse,
+    RecommendationRequest,
+    RecommendationResponse,
+)
 
 
 APP_VERSION = os.getenv("APP_VERSION", "dev")
-MODEL_REVISION = os.getenv("MODEL_REVISION")
+MODEL_REVISION = os.getenv("MODEL_REVISION") or None
 
 REQUESTS = Counter(
     "zippy_http_requests_total",
@@ -109,6 +115,22 @@ def recommendations(payload: RecommendationRequest) -> RecommendationResponse:
         recommendations=ranked,
         relaxable_constraints=relaxable,
     )
+
+
+@app.post("/api/v1/chat", response_model=ChatResponse)
+def chat(payload: ChatRequest) -> ChatResponse:
+    _, activities = load_catalogue()
+    return answer_chat(activities, payload)
+
+
+@app.get("/api/v1/model-info")
+def model_info() -> dict[str, str | bool | None]:
+    return {
+        "ranking_mode": "deterministic",
+        "trained_model_loaded": MODEL_REVISION is not None,
+        "model_revision": MODEL_REVISION,
+        "safety_boundary": "Catalogue rules remain authoritative.",
+    }
 
 
 @app.get("/metrics", include_in_schema=False)
