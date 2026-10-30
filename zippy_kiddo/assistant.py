@@ -5,6 +5,7 @@ from .schemas import Activity, ChatRequest, ChatResponse
 
 
 AGE_PATTERN = re.compile(r"\b(1[0-2]|[3-9])\s*(?:years?\s*old|years?|yo)\b")
+TIME_PATTERN = re.compile(r"\b(5|10|15|20|30|45|60)\s*(?:minutes?|mins?)\b")
 
 
 def _known_materials(activities: tuple[Activity, ...]) -> tuple[str, ...]:
@@ -19,6 +20,14 @@ def _known_materials(activities: tuple[Activity, ...]) -> tuple[str, ...]:
 def _mentioned_age(message: str) -> int | None:
     match = AGE_PATTERN.search(message)
     return int(match.group(1)) if match else None
+
+
+def _mentioned_time(message: str) -> int | None:
+    match = TIME_PATTERN.search(message)
+    if not match:
+        return None
+    requested = int(match.group(1))
+    return max(value for value in (5, 10, 15, 30, 45, 60) if value <= requested)
 
 
 def answer_chat(
@@ -92,9 +101,23 @@ def answer_chat(
     ]
     selected = set(payload.context.materials)
     selected.update(mentioned)
-    updates: dict[str, object] = {"materials": sorted(selected), "result_limit": 10}
+    for material in _known_materials(activities):
+        if re.search(rf"\b(?:no|without)\s+{re.escape(material)}\b", message):
+            selected.discard(material)
+    updates: dict[str, object] = {
+        "materials": sorted(selected),
+        "result_limit": 10,
+    }
     if age := _mentioned_age(message):
         updates["age"] = age
+    if duration := _mentioned_time(message):
+        updates["duration_minutes"] = duration
+    if "outdoor" in message or "outside" in message:
+        updates["setting"] = "outdoor"
+    if any(word in message for word in ("quiet", "calm", "relax", "tired")):
+        updates["energy"] = "calm"
+    elif any(word in message for word in ("active", "energetic", "wiggly", "movement")):
+        updates["energy"] = "active"
     context = payload.context.model_copy(update=updates)
     matches, _ = recommend(activities, context)
 

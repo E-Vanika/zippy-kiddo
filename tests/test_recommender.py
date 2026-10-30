@@ -84,6 +84,18 @@ def test_result_limit_is_respected() -> None:
     assert 3 < len(nine) <= 9
 
 
+def test_seen_activities_are_not_repeated_when_alternatives_exist() -> None:
+    _, activities = load_catalogue()
+    first, _ = recommend(activities, request_for())
+    later, _ = recommend(
+        activities,
+        request_for(exclude_activity_ids=[first[0].activity_id]),
+    )
+
+    assert later
+    assert first[0].activity_id not in [item.activity_id for item in later]
+
+
 def test_model_ranking_cannot_bypass_material_safety_constraint() -> None:
     _, activities = load_catalogue()
 

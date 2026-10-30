@@ -131,7 +131,18 @@ const materialOptions = ["paper","pencil","crayons","toys","socks","pillows","bo
 const materialBox = document.querySelector("#materials");
 const activityForm = document.querySelector("#activity-form");
 const results = document.querySelector("#results");
+const shownActivitiesKey = "zippy-kiddo-shown-activity-ids";
 const escapeHtml = value => String(value).replace(/[&<>'"]/g, char => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
+
+function shownActivityIds() {
+  try { return JSON.parse(sessionStorage.getItem(shownActivitiesKey) || "[]"); }
+  catch { return []; }
+}
+
+function rememberActivities(items) {
+  const ids = [...new Set([...shownActivityIds(), ...items.map(item => item.activity_id)])].slice(-50);
+  sessionStorage.setItem(shownActivitiesKey, JSON.stringify(ids));
+}
 
 materialOptions.forEach(item => {
   const label = document.createElement("label");
@@ -151,7 +162,8 @@ function currentFilters() {
     supervision: data.get("supervision"),
     energy: data.get("energy"),
     result_limit: Number(data.get("result_limit")),
-    materials: [...materialBox.querySelectorAll("input:checked")].map(input => input.value)
+    materials: [...materialBox.querySelectorAll("input:checked")].map(input => input.value),
+    exclude_activity_ids: shownActivityIds()
   };
 }
 
@@ -178,6 +190,7 @@ activityForm.addEventListener("submit", async event => {
       results.innerHTML = `<div class="card"><h2>No safe match yet</h2><p>${body.relaxable_constraints.map(escapeHtml).join(" ")}</p></div>`;
       return;
     }
+    rememberActivities(body.recommendations);
     results.innerHTML = `<h2 class="results-heading">${body.recommendations.length} matched activities</h2>` + body.recommendations.map(item => `<article class="card">
       <div class="activity-visual" aria-hidden="true">${activityEmoji(item)}</div><h2>${escapeHtml(item.title)}</h2><p>${escapeHtml(item.description)}</p>
       <p class="meta">${item.duration_minutes} min | ${escapeHtml(item.supervision)} supervision | setup ${item.setup_minutes} min | cleanup ${item.cleanup_minutes} min</p>

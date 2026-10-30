@@ -29,6 +29,7 @@ class RecommendationRequest(BaseModel):
     supervision: Supervision
     energy: Energy
     materials: list[str] = Field(default_factory=list, max_length=20)
+    exclude_activity_ids: list[str] = Field(default_factory=list, max_length=50)
     result_limit: int = Field(default=6, ge=1, le=10)
 
     @field_validator("duration_minutes")
@@ -49,6 +50,14 @@ class RecommendationRequest(BaseModel):
                 raise ValueError("materials must be non-empty and at most 40 characters")
             normalised.append(cleaned)
         return sorted(set(normalised))
+
+    @field_validator("exclude_activity_ids")
+    @classmethod
+    def normalise_excluded_ids(cls, values: list[str]) -> list[str]:
+        cleaned = [value.strip().lower() for value in values if value.strip()]
+        if any(not value.replace("-", "").isalnum() for value in cleaned):
+            raise ValueError("excluded activity IDs may contain letters, numbers, and hyphens")
+        return list(dict.fromkeys(cleaned))
 
 
 class Activity(BaseModel):
