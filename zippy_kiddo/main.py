@@ -11,6 +11,7 @@ from . import __version__
 from .assistant import answer_chat
 from .catalog import load_catalogue
 from .recommender import recommend
+from .retrieval import load_retrieval_model
 from .schemas import (
     ChatRequest,
     ChatResponse,
@@ -20,7 +21,8 @@ from .schemas import (
 
 
 APP_VERSION = os.getenv("APP_VERSION", "dev")
-MODEL_REVISION = os.getenv("MODEL_REVISION") or None
+RETRIEVAL_MODEL = load_retrieval_model()
+MODEL_REVISION = RETRIEVAL_MODEL.revision if RETRIEVAL_MODEL else None
 
 REQUESTS = Counter(
     "zippy_http_requests_total",
@@ -46,7 +48,7 @@ RANKING_MODE = Counter(
 app = FastAPI(
     title="Zippy Kiddo",
     version=__version__,
-    description="Safe activity recommendations for children ages 3–12.",
+    description="Safe activity recommendations for children ages 3-12.",
 )
 
 
@@ -79,9 +81,9 @@ def health() -> dict[str, str]:
 def readiness(response: Response) -> dict[str, str | bool | int]:
     version, activities = load_catalogue()
     return {
-        "status": "degraded" if MODEL_REVISION is None else "ready",
+        "status": "degraded" if RETRIEVAL_MODEL is None else "ready",
         "fallback_ready": True,
-        "model_ready": MODEL_REVISION is not None,
+        "model_ready": RETRIEVAL_MODEL is not None,
         "catalogue_version": version,
         "activity_count": len(activities),
     }
@@ -102,16 +104,17 @@ def version() -> dict[str, str | None]:
 def recommendations(payload: RecommendationRequest) -> RecommendationResponse:
     started = time.perf_counter()
     catalogue_version, activities = load_catalogue()
-    ranked, relaxable = recommend(activities, payload)
+    ranked, relaxable = recommend(activities, payload, RETRIEVAL_MODEL)
     RECOMMENDATION_DURATION.observe(time.perf_counter() - started)
-    RANKING_MODE.labels("deterministic").inc()
+    ranking_mode = "hybrid-tfidf" if RETRIEVAL_MODEL else "deterministic"
+    RANKING_MODE.labels(ranking_mode).inc()
 
     return RecommendationResponse(
         request_id=str(uuid4()),
-        ranking_mode="deterministic",
-        degraded=True,
+        ranking_mode=ranking_mode,
+        degraded=RETRIEVAL_MODEL is None,
         catalogue_version=catalogue_version,
-        model_revision=None,
+        model_revision=MODEL_REVISION,
         recommendations=ranked,
         relaxable_constraints=relaxable,
     )
@@ -120,14 +123,14 @@ def recommendations(payload: RecommendationRequest) -> RecommendationResponse:
 @app.post("/api/v1/chat", response_model=ChatResponse)
 def chat(payload: ChatRequest) -> ChatResponse:
     _, activities = load_catalogue()
-    return answer_chat(activities, payload)
+    return answer_chat(activities, payload, MODEL_REVISION)
 
 
 @app.get("/api/v1/model-info")
 def model_info() -> dict[str, str | bool | None]:
     return {
-        "ranking_mode": "deterministic",
-        "trained_model_loaded": MODEL_REVISION is not None,
+        "ranking_mode": "hybrid-tfidf" if RETRIEVAL_MODEL else "deterministic",
+        "trained_model_loaded": RETRIEVAL_MODEL is not None,
         "model_revision": MODEL_REVISION,
         "safety_boundary": "Catalogue rules remain authoritative.",
     }

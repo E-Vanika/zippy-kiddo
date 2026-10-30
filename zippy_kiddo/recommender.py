@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Protocol
 
 from .schemas import Activity, Recommendation, RecommendationRequest, Supervision
 
@@ -15,6 +16,10 @@ class RankedActivity:
     activity: Activity
     score: float
     reasons: tuple[str, ...]
+
+
+class ActivityScorer(Protocol):
+    def score(self, activity_id: str, request: RecommendationRequest) -> float: ...
 
 
 def is_eligible(activity: Activity, request: RecommendationRequest) -> bool:
@@ -34,7 +39,9 @@ def is_eligible(activity: Activity, request: RecommendationRequest) -> bool:
 
 
 def rank_activity(
-    activity: Activity, request: RecommendationRequest
+    activity: Activity,
+    request: RecommendationRequest,
+    model: ActivityScorer | None = None,
 ) -> RankedActivity:
     score = 0.0
     reasons: list[str] = []
@@ -72,15 +79,23 @@ def rank_activity(
     if optional_match_count:
         reasons.append("also uses optional materials you have")
 
+    if model is not None:
+        retrieval_score = model.score(activity.id, request)
+        score += retrieval_score * 3.0
+        if retrieval_score > 0:
+            reasons.append("ranked by the deployed catalogue retrieval model")
+
     return RankedActivity(activity=activity, score=score, reasons=tuple(reasons))
 
 
 def recommend(
-    activities: tuple[Activity, ...], request: RecommendationRequest
+    activities: tuple[Activity, ...],
+    request: RecommendationRequest,
+    model: ActivityScorer | None = None,
 ) -> tuple[list[Recommendation], list[str]]:
     eligible = [activity for activity in activities if is_eligible(activity, request)]
     ranked = sorted(
-        (rank_activity(activity, request) for activity in eligible),
+        (rank_activity(activity, request, model) for activity in eligible),
         key=lambda item: (-item.score, item.activity.id),
     )
 

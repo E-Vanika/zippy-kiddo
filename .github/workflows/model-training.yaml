@@ -1,0 +1,152 @@
+name: Model Training
+
+on:
+  workflow_dispatch:
+    inputs:
+      kaggle_username:
+        description: Kaggle profile username
+        required: false
+        type: string
+      hf_model_repo:
+        description: Optional Hugging Face repo (owner/name)
+        required: false
+        type: string
+  push:
+    branches: [main]
+    paths:
+      - "training/**"
+      - ".github/workflows/model-training.yaml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zippy-kiddo-model-training
+  cancel-in-progress: false
+
+jobs:
+  train-publish-lock:
+    runs-on: ubuntu-latest
+    env:
+      KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      KAGGLE_USERNAME: ${{ inputs.kaggle_username || vars.KAGGLE_USERNAME || 'vanikaeruthayaraj' }}
+      HF_MODEL_REPO: ${{ inputs.hf_model_repo || vars.HF_MODEL_REPO }}
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+
+      - name: Require model-platform configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${KAGGLE_API_TOKEN}" || { echo "::error::Missing KAGGLE_API_TOKEN secret"; exit 1; }
+          test -n "${HF_TOKEN}" || { echo "::error::Missing HF_TOKEN secret"; exit 1; }
+          test -n "${KAGGLE_USERNAME}" || { echo "::error::Missing KAGGLE_USERNAME Actions variable or workflow input"; exit 1; }
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Kaggle and Hugging Face clients
+        run: python -m pip install --disable-pip-version-check "kaggle>=1.7,<3" "huggingface-hub>=0.32,<2"
+
+      - name: Prepare Kaggle training kernel
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp zippy_kiddo/data/activities.json training/kaggle/activities.json
+          sed "s/__KAGGLE_USERNAME__/${KAGGLE_USERNAME}/g" \
+            training/kaggle/kernel-metadata.template.json \
+            > training/kaggle/kernel-metadata.json
+
+      - name: Train model on Kaggle
+        shell: bash
+        run: |
+          set -euo pipefail
+          kernel="${KAGGLE_USERNAME}/zippy-kiddo-ranker-training"
+          kaggle kernels push --path training/kaggle --timeout 600
+
+          completed=false
+          for attempt in $(seq 1 40); do
+            status=$(kaggle kernels status "${kernel}" 2>&1)
+            echo "${status}"
+            if grep -qiE 'complete|successful' <<<"${status}"; then
+              completed=true
+              break
+            fi
+            if grep -qiE 'error|failed|cancel' <<<"${status}"; then
+              echo "::error::Kaggle training failed"
+              exit 1
+            fi
+            sleep 15
+          done
+          test "${completed}" = true || { echo "::error::Kaggle training timed out"; exit 1; }
+          mkdir -p model-output
+          kaggle kernels output "${kernel}" --path model-output --force
+
+      - name: Enforce model quality gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s model-output/model.json
+          test -s model-output/metrics.json
+          jq -e '.quality_gate == "passed" and .self_retrieval_top1_accuracy >= 0.80' model-output/metrics.json
+
+      - name: Publish immutable model to Hugging Face
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          result=$(python training/publish_model.py | tail -n 1)
+          echo "${result}"
+          echo "repo_id=$(jq -r .repo_id <<<"${result}")" >> "$GITHUB_OUTPUT"
+          echo "revision=$(jq -r .revision <<<"${result}")" >> "$GITHUB_OUTPUT"
+
+      - name: Write model lock
+        run: |
+          python training/write_model_lock.py \
+            --repo-id "${{ steps.publish.outputs.repo_id }}" \
+            --revision "${{ steps.publish.outputs.revision }}" \
+            --model model-output/model.json \
+            --metrics model-output/metrics.json \
+            --output model/model-lock.json
+
+      - name: Preserve training evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: zippy-kiddo-model-${{ github.run_id }}
+          path: |
+            model-output/model.json
+            model-output/metrics.json
+            model-output/README.md
+            model/model-lock.json
+          retention-days: 30
+
+      - name: Commit immutable model revision
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add model/model-lock.json
+          if git diff --cached --quiet; then
+            echo "Model lock already points to this artifact."
+            exit 0
+          fi
+          git commit -m "model: promote validated Kaggle ranker"
+          git push origin HEAD:main
+
+      - name: Publish model summary
+        shell: bash
+        run: |
+          {
+            echo "## Model promoted"
+            echo
+            echo "- Kaggle kernel: ${KAGGLE_USERNAME}/zippy-kiddo-ranker-training"
+            echo "- Hugging Face repo: ${{ steps.publish.outputs.repo_id }}"
+            echo "- Revision: \`${{ steps.publish.outputs.revision }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

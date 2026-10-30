@@ -3,6 +3,11 @@ from zippy_kiddo.recommender import is_eligible, recommend
 from zippy_kiddo.schemas import Energy, RecommendationRequest, Setting, Supervision
 
 
+class PreferCupTower:
+    def score(self, activity_id: str, request: RecommendationRequest) -> float:
+        return 100.0 if activity_id == "cup-tower" else 0.0
+
+
 def request_for(**overrides: object) -> RecommendationRequest:
     values: dict[str, object] = {
         "age": 6,
@@ -77,3 +82,11 @@ def test_result_limit_is_respected() -> None:
 
     assert len(three) == 3
     assert 3 < len(nine) <= 9
+
+
+def test_model_ranking_cannot_bypass_material_safety_constraint() -> None:
+    _, activities = load_catalogue()
+
+    ranked, _ = recommend(activities, request_for(age=8), PreferCupTower())
+
+    assert all(item.activity_id != "cup-tower" for item in ranked)

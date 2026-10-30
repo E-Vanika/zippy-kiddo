@@ -12,7 +12,9 @@ def _known_materials(activities: tuple[Activity, ...]) -> tuple[str, ...]:
 
 
 def answer_chat(
-    activities: tuple[Activity, ...], payload: ChatRequest
+    activities: tuple[Activity, ...],
+    payload: ChatRequest,
+    model_revision: str | None = None,
 ) -> ChatResponse:
     message = payload.message.lower()
 
@@ -26,12 +28,17 @@ def answer_chat(
         )
 
     if any(word in message for word in ("train", "model", "ai")):
+        model_message = (
+            f"A catalogue retrieval model is loaded at revision {model_revision}."
+            if model_revision
+            else "No trained retrieval artifact is currently loaded."
+        )
         return ChatResponse(
             reply=(
-                "Zippy Kiddo currently uses a deterministic, safety-first catalogue "
-                "ranker. No trained language model is making child-safety decisions."
+                f"{model_message} Deterministic safety rules remain authoritative, "
+                "and no language model makes child-safety decisions."
             ),
-            assistant_mode="catalogue",
+            assistant_mode="hybrid-tfidf" if model_revision else "catalogue",
         )
 
     if any(word in message for word in ("safe", "danger", "supervision", "alone")):

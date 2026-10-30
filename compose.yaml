@@ -6,7 +6,6 @@ services:
     restart: unless-stopped
     environment:
       APP_VERSION: ${IMAGE_TAG:-local}
-      MODEL_REVISION: ${MODEL_REVISION:-}
     expose:
       - "8000"
     mem_limit: 320m

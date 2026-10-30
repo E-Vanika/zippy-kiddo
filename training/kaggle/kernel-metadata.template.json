@@ -1,0 +1,14 @@
+{
+  "id": "__KAGGLE_USERNAME__/zippy-kiddo-ranker-training",
+  "title": "Zippy Kiddo Ranker Training",
+  "code_file": "train.py",
+  "language": "python",
+  "kernel_type": "script",
+  "is_private": false,
+  "enable_gpu": false,
+  "enable_internet": false,
+  "dataset_sources": [],
+  "competition_sources": [],
+  "kernel_sources": [],
+  "model_sources": []
+}

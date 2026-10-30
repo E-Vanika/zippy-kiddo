@@ -34,3 +34,8 @@ htmlcov/
 
 # Generated Ansible inventory
 ansible/inventory.ini
+# Model artifacts are fetched from an immutable Hugging Face revision in CI.
+zippy_kiddo/model/model.json
+zippy_kiddo/model/model-lock.json
+training/kaggle/activities.json
+training/kaggle/kernel-metadata.json

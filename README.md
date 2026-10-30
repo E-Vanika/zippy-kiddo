@@ -45,18 +45,18 @@ boundaries without making the service dependent on a model provider.
 
 ### Recommendation intelligence
 
-The production service currently uses deterministic eligibility and ranking
-rules, not a trained model. Age, time, setting, supervision, and required
-materials are hard safety constraints. Energy, time fit, and use of selected
-materials determine ranking. `/api/v1/model-info` reports this state so the
-service never presents an empty model revision as trained AI.
+Production uses deterministic eligibility rules plus a compact trained ranker.
+Age, time, setting, supervision, and required materials remain authoritative.
+`/api/v1/model-info` reports whether the immutable model artifact is loaded; if
+it is unavailable, the service safely falls back to deterministic ranking.
 
-Kaggle and Hugging Face credentials are reserved for the next model lifecycle:
-approved, non-personal preference labels are used for free Kaggle training;
-evaluation and safety gates must pass before a versioned artifact is published
-to Hugging Face. OCI will load an explicit immutable revision while retaining
-the deterministic engine as its fallback. No model is published until genuine
-labels and acceptance thresholds exist.
+The model lifecycle runs on free services: Kaggle fits a compact TF-IDF
+retrieval model from the reviewed catalogue, a quality gate checks retrieval
+accuracy, and Hugging Face stores the versioned artifact. A checksum-protected
+model lock pins the exact Hugging Face commit used in the OCI image. Hard safety
+constraints remain deterministic and the service falls back safely when an
+artifact is unavailable. Future preference learning will require genuine,
+reviewed, non-personal feedback rather than synthetic labels.
 
 Production runs on an OCI Always Free E2 Micro instance. Terraform manages the
 network and compute resources, Ansible reconciles the host, GitHub Actions
