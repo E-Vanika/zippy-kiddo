@@ -28,4 +28,4 @@ addopts = "-q"
 include = ["zippy_kiddo*"]
 
 [tool.setuptools.package-data]
-zippy_kiddo = ["data/*.json", "static/*.html", "model/*.json"]
+zippy_kiddo = ["data/*.json", "static/*.html", "static/images/*.png", "model/*.json"]

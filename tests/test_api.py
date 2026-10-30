@@ -67,6 +67,26 @@ def test_chat_uses_materials_with_current_filters() -> None:
     assert "Cup Tower Lab" in body["suggested_activities"]
 
 
+def test_chat_uses_age_mentioned_in_the_message() -> None:
+    response = client.post(
+        "/api/v1/chat",
+        json={"message": "What can I do with my 4 year old boy?", "context": valid_payload()},
+    )
+
+    assert response.status_code == 200
+    assert "4-year-old" in response.json()["reply"]
+
+
+def test_chat_explains_training_schedule() -> None:
+    response = client.post(
+        "/api/v1/chat",
+        json={"message": "Does model training happen regularly?", "context": valid_payload()},
+    )
+
+    assert response.status_code == 200
+    assert "not retrained continuously" in response.json()["reply"]
+
+
 def test_model_info_does_not_claim_an_unloaded_model() -> None:
     response = client.get("/api/v1/model-info")
 

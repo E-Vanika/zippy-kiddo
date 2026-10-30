@@ -1,5 +1,10 @@
+import re
+
 from .recommender import recommend
 from .schemas import Activity, ChatRequest, ChatResponse
+
+
+AGE_PATTERN = re.compile(r"\b(1[0-2]|[3-9])\s*(?:years?\s*old|years?|yo)\b")
 
 
 def _known_materials(activities: tuple[Activity, ...]) -> tuple[str, ...]:
@@ -11,6 +16,11 @@ def _known_materials(activities: tuple[Activity, ...]) -> tuple[str, ...]:
     return tuple(sorted(materials, key=lambda value: (-len(value), value)))
 
 
+def _mentioned_age(message: str) -> int | None:
+    match = AGE_PATTERN.search(message)
+    return int(match.group(1)) if match else None
+
+
 def answer_chat(
     activities: tuple[Activity, ...],
     payload: ChatRequest,
@@ -18,25 +28,42 @@ def answer_chat(
 ) -> ChatResponse:
     message = payload.message.lower()
 
-    if any(word in message for word in ("hello", "hi ", "hey", "good morning")):
+    if message.strip() in {"hi", "hello", "hey"} or "good morning" in message:
         return ChatResponse(
             reply=(
-                "Hi! Select the child's age, time, setting, supervision, energy, "
-                "and materials. I can then explain or expand the safe matches."
+                "Hi! I can help with a safe, practical activity. Try: 'ideas for my "
+                "4-year-old with paper and crayons' or tell me the time and materials "
+                "you have."
             ),
             assistant_mode="catalogue",
         )
 
+    if "train" in message and any(
+        word in message for word in ("regular", "schedule", "often", "daily", "when")
+    ):
+        return ChatResponse(
+            reply=(
+                "The current model is not retrained continuously. It is retrained when "
+                "the reviewed activity catalogue or training pipeline changes, or when a "
+                "maintainer starts the Model Training workflow. Each approved run is "
+                "quality-checked and deployed as an immutable version."
+            ),
+            assistant_mode="hybrid-tfidf" if model_revision else "catalogue",
+        )
+
     if any(word in message for word in ("train", "model", "ai")):
         model_message = (
-            f"A catalogue retrieval model is loaded at revision {model_revision}."
+            f"A catalogue retrieval model is loaded at revision {model_revision}. It was "
+            f"trained on {len(activities)} reviewed activity records, quality-checked, "
+            "versioned in Hugging Face, and runs locally in this service."
             if model_revision
             else "No trained retrieval artifact is currently loaded."
         )
         return ChatResponse(
             reply=(
-                f"{model_message} Deterministic safety rules remain authoritative, "
-                "and no language model makes child-safety decisions."
+                f"{model_message} It does not train on child conversations or personal "
+                "data. Deterministic safety rules remain authoritative, and no language "
+                "model makes child-safety decisions."
             ),
             assistant_mode="hybrid-tfidf" if model_revision else "catalogue",
         )
@@ -65,9 +92,10 @@ def answer_chat(
     ]
     selected = set(payload.context.materials)
     selected.update(mentioned)
-    context = payload.context.model_copy(
-        update={"materials": sorted(selected), "result_limit": 10}
-    )
+    updates: dict[str, object] = {"materials": sorted(selected), "result_limit": 10}
+    if age := _mentioned_age(message):
+        updates["age"] = age
+    context = payload.context.model_copy(update=updates)
     matches, _ = recommend(activities, context)
 
     if not matches:
@@ -80,11 +108,13 @@ def answer_chat(
         )
 
     titles = [match.title for match in matches[:5]]
-    material_text = (
-        f" using {', '.join(mentioned)}" if mentioned else " for the current filters"
-    )
+    age_text = f" for a {context.age}-year-old" if "age" in updates else ""
+    material_text = f" using {', '.join(mentioned)}" if mentioned else ""
     return ChatResponse(
-        reply=f"Good matches{material_text}: {', '.join(titles)}.",
+        reply=(
+            f"Here are safe, practical ideas{age_text}{material_text}: "
+            f"{', '.join(titles)}. Select one below for its steps and safety note."
+        ),
         assistant_mode="catalogue",
         suggested_activities=titles,
     )
