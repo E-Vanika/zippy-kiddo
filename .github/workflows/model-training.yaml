@@ -30,7 +30,7 @@ jobs:
     env:
       KAGGLE_API_TOKEN: ${{ secrets.KAGGLE_API_TOKEN }}
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
-      KAGGLE_USERNAME: ${{ inputs.kaggle_username || vars.KAGGLE_USERNAME || 'vanikaeruthayaraj' }}
+      KAGGLE_PROFILE_USERNAME: ${{ inputs.kaggle_username || vars.KAGGLE_USERNAME || 'vanikaeruthayaraj' }}
       HF_MODEL_REPO: ${{ inputs.hf_model_repo || vars.HF_MODEL_REPO }}
 
     steps:
@@ -43,7 +43,25 @@ jobs:
           set -euo pipefail
           test -n "${KAGGLE_API_TOKEN}" || { echo "::error::Missing KAGGLE_API_TOKEN secret"; exit 1; }
           test -n "${HF_TOKEN}" || { echo "::error::Missing HF_TOKEN secret"; exit 1; }
-          test -n "${KAGGLE_USERNAME}" || { echo "::error::Missing KAGGLE_USERNAME Actions variable or workflow input"; exit 1; }
+          test -n "${KAGGLE_PROFILE_USERNAME}" || { echo "::error::Missing Kaggle profile username"; exit 1; }
+
+      - name: Configure Kaggle authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          if jq -e 'type == "object" and .key' <<<"${KAGGLE_API_TOKEN}" >/dev/null 2>&1; then
+            legacy_username=$(jq -r '.username // empty' <<<"${KAGGLE_API_TOKEN}")
+            legacy_key=$(jq -r '.key' <<<"${KAGGLE_API_TOKEN}")
+            echo "::add-mask::${legacy_key}"
+            echo "KAGGLE_API_TOKEN=" >> "$GITHUB_ENV"
+            echo "KAGGLE_USERNAME=${legacy_username:-$KAGGLE_PROFILE_USERNAME}" >> "$GITHUB_ENV"
+            echo "KAGGLE_KEY=${legacy_key}" >> "$GITHUB_ENV"
+          elif [[ "${KAGGLE_API_TOKEN}" != KGAT_* ]]; then
+            echo "::add-mask::${KAGGLE_API_TOKEN}"
+            echo "KAGGLE_API_TOKEN=" >> "$GITHUB_ENV"
+            echo "KAGGLE_USERNAME=${KAGGLE_PROFILE_USERNAME}" >> "$GITHUB_ENV"
+            echo "KAGGLE_KEY=${KAGGLE_API_TOKEN}" >> "$GITHUB_ENV"
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -54,12 +72,15 @@ jobs:
       - name: Install Kaggle and Hugging Face clients
         run: python -m pip install --disable-pip-version-check "kaggle>=1.7,<3" "huggingface-hub>=0.32,<2"
 
+      - name: Verify Kaggle authentication
+        run: kaggle kernels list --mine --page-size 1
+
       - name: Prepare Kaggle training kernel
         shell: bash
         run: |
           set -euo pipefail
           cp zippy_kiddo/data/activities.json training/kaggle/activities.json
-          sed "s/__KAGGLE_USERNAME__/${KAGGLE_USERNAME}/g" \
+          sed "s/__KAGGLE_USERNAME__/${KAGGLE_PROFILE_USERNAME}/g" \
             training/kaggle/kernel-metadata.template.json \
             > training/kaggle/kernel-metadata.json
 
@@ -67,7 +88,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          kernel="${KAGGLE_USERNAME}/zippy-kiddo-ranker-training"
+          kernel="${KAGGLE_PROFILE_USERNAME}/zippy-kiddo-ranker-training"
           kaggle kernels push --path training/kaggle --timeout 600
 
           completed=false
@@ -146,7 +167,7 @@ jobs:
           {
             echo "## Model promoted"
             echo
-            echo "- Kaggle kernel: ${KAGGLE_USERNAME}/zippy-kiddo-ranker-training"
+            echo "- Kaggle kernel: ${KAGGLE_PROFILE_USERNAME}/zippy-kiddo-ranker-training"
             echo "- Hugging Face repo: ${{ steps.publish.outputs.repo_id }}"
             echo "- Revision: \`${{ steps.publish.outputs.revision }}\`"
           } >> "$GITHUB_STEP_SUMMARY"
