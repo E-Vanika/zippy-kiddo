@@ -52,9 +52,10 @@ it is unavailable, the service safely falls back to deterministic ranking.
 
 The model lifecycle runs on free services: Kaggle is the preferred training
 runner, with the identical GitHub Actions trainer as a credential/outage
-fallback. A quality gate checks retrieval accuracy, and Hugging Face stores the
-versioned artifact. A checksum-protected model lock pins the exact Hugging Face
-commit used in the OCI image and records the training platform. Hard safety
+fallback. A quality gate checks retrieval accuracy, and Hugging Face is the
+preferred versioned artifact store, with a repository-pinned fallback when its
+credentials are unavailable. A checksum-protected model lock pins the exact
+artifact used in the OCI image and records the training platform. Hard safety
 constraints remain deterministic and the service falls back safely when an
 artifact is unavailable. Future preference learning will require genuine,
 reviewed, non-personal feedback rather than synthetic labels.

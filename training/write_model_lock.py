@@ -6,6 +6,7 @@ from pathlib import Path
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--source", choices=("huggingface", "repository"), required=True)
     parser.add_argument("--repo-id", required=True)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--model", type=Path, required=True)
@@ -15,6 +16,7 @@ def main() -> None:
 
     metrics = json.loads(args.metrics.read_text(encoding="utf-8"))
     lock = {
+        "source": args.source,
         "repo_id": args.repo_id,
         "revision": args.revision,
         "filename": "model.json",

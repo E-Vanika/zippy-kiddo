@@ -134,6 +134,7 @@ jobs:
 
       - name: Publish immutable model to Hugging Face
         id: publish
+        continue-on-error: true
         shell: bash
         run: |
           set -euo pipefail
@@ -142,12 +143,29 @@ jobs:
           echo "repo_id=$(jq -r .repo_id <<<"${result}")" >> "$GITHUB_OUTPUT"
           echo "revision=$(jq -r .revision <<<"${result}")" >> "$GITHUB_OUTPUT"
 
-      - name: Write model lock
+      - name: Write Hugging Face model lock
+        if: ${{ steps.publish.outcome == 'success' }}
         run: |
           python training/write_model_lock.py \
+            --source huggingface \
             --repo-id "${{ steps.publish.outputs.repo_id }}" \
             --revision "${{ steps.publish.outputs.revision }}" \
             --model model-output/model.json \
+            --metrics model-output/metrics.json \
+            --output model/model-lock.json
+
+      - name: Write repository model fallback
+        if: ${{ steps.publish.outcome != 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::warning::Hugging Face rejected publication; pinning the validated artifact in GitHub."
+          cp model-output/model.json model/model.json
+          python training/write_model_lock.py \
+            --source repository \
+            --repo-id "${{ github.repository }}" \
+            --revision "${{ github.run_id }}" \
+            --model model/model.json \
             --metrics model-output/metrics.json \
             --output model/model-lock.json
 
@@ -169,6 +187,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add model/model-lock.json
+          if test -f model/model.json; then
+            git add model/model.json
+          fi
           if git diff --cached --quiet; then
             echo "Model lock already points to this artifact."
             exit 0
@@ -184,6 +205,7 @@ jobs:
             echo
             echo "- Kaggle kernel: ${KAGGLE_PROFILE_USERNAME}/zippy-kiddo-ranker-training"
             echo "- Training platform: $(jq -r .training_platform model-output/metrics.json)"
-            echo "- Hugging Face repo: ${{ steps.publish.outputs.repo_id }}"
-            echo "- Revision: \`${{ steps.publish.outputs.revision }}\`"
+            echo "- Artifact source: $(jq -r .source model/model-lock.json)"
+            echo "- Artifact repository: $(jq -r .repo_id model/model-lock.json)"
+            echo "- Revision: \`$(jq -r .revision model/model-lock.json)\`"
           } >> "$GITHUB_STEP_SUMMARY"

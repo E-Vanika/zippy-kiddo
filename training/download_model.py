@@ -4,20 +4,22 @@ import os
 import shutil
 from pathlib import Path
 
-from huggingface_hub import hf_hub_download
-
-
 def main() -> None:
     lock_path = Path("model/model-lock.json")
     lock = json.loads(lock_path.read_text(encoding="utf-8"))
-    downloaded = Path(
-        hf_hub_download(
-            repo_id=lock["repo_id"],
-            filename=lock["filename"],
-            revision=lock["revision"],
-            token=os.environ.get("HF_TOKEN"),
+    if lock.get("source") == "repository":
+        downloaded = Path("model/model.json")
+    else:
+        from huggingface_hub import hf_hub_download
+
+        downloaded = Path(
+            hf_hub_download(
+                repo_id=lock["repo_id"],
+                filename=lock["filename"],
+                revision=lock["revision"],
+                token=os.environ.get("HF_TOKEN"),
+            )
         )
-    )
     digest = hashlib.sha256(downloaded.read_bytes()).hexdigest()
     if digest != lock["sha256"]:
         raise RuntimeError("downloaded model checksum does not match model lock")
