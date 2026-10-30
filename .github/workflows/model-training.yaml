@@ -1,4 +1,5 @@
 name: Model Training
+# A source change to this workflow triggers a fresh credential validation run.
 
 on:
   workflow_dispatch:
