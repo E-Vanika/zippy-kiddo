@@ -117,6 +117,7 @@ def main() -> None:
     }
     metrics = {
         "trained_at": trained_at,
+        "training_platform": os.getenv("TRAINING_PLATFORM", "kaggle"),
         "catalogue_version": payload["catalogue_version"],
         "document_count": count,
         "vocabulary_size": len(idf),

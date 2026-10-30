@@ -50,10 +50,11 @@ Age, time, setting, supervision, and required materials remain authoritative.
 `/api/v1/model-info` reports whether the immutable model artifact is loaded; if
 it is unavailable, the service safely falls back to deterministic ranking.
 
-The model lifecycle runs on free services: Kaggle fits a compact TF-IDF
-retrieval model from the reviewed catalogue, a quality gate checks retrieval
-accuracy, and Hugging Face stores the versioned artifact. A checksum-protected
-model lock pins the exact Hugging Face commit used in the OCI image. Hard safety
+The model lifecycle runs on free services: Kaggle is the preferred training
+runner, with the identical GitHub Actions trainer as a credential/outage
+fallback. A quality gate checks retrieval accuracy, and Hugging Face stores the
+versioned artifact. A checksum-protected model lock pins the exact Hugging Face
+commit used in the OCI image and records the training platform. Hard safety
 constraints remain deterministic and the service falls back safely when an
 artifact is unavailable. Future preference learning will require genuine,
 reviewed, non-personal feedback rather than synthetic labels.

@@ -73,9 +73,12 @@ jobs:
         run: python -m pip install --disable-pip-version-check "kaggle>=1.7,<3" "huggingface-hub>=0.32,<2"
 
       - name: Verify Kaggle authentication
+        id: kaggle_auth
+        continue-on-error: true
         run: kaggle kernels list --mine --page-size 1
 
       - name: Prepare Kaggle training kernel
+        if: ${{ steps.kaggle_auth.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -85,6 +88,7 @@ jobs:
             > training/kaggle/kernel-metadata.json
 
       - name: Train model on Kaggle
+        if: ${{ steps.kaggle_auth.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -108,6 +112,17 @@ jobs:
           test "${completed}" = true || { echo "::error::Kaggle training timed out"; exit 1; }
           mkdir -p model-output
           kaggle kernels output "${kernel}" --path model-output --force
+
+      - name: Train with free GitHub Actions fallback
+        if: ${{ steps.kaggle_auth.outcome != 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "::warning::Kaggle rejected its credential; using the identical free CI trainer."
+          mkdir -p model-output
+          MODEL_OUTPUT_DIR="$PWD/model-output" \
+            TRAINING_PLATFORM="github-actions-fallback" \
+            python training/kaggle/train.py
 
       - name: Enforce model quality gate
         shell: bash
@@ -168,6 +183,7 @@ jobs:
             echo "## Model promoted"
             echo
             echo "- Kaggle kernel: ${KAGGLE_PROFILE_USERNAME}/zippy-kiddo-ranker-training"
+            echo "- Training platform: $(jq -r .training_platform model-output/metrics.json)"
             echo "- Hugging Face repo: ${{ steps.publish.outputs.repo_id }}"
             echo "- Revision: \`${{ steps.publish.outputs.revision }}\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -21,6 +21,7 @@ def main() -> None:
         "sha256": hashlib.sha256(args.model.read_bytes()).hexdigest(),
         "catalogue_version": metrics["catalogue_version"],
         "metrics": {
+            "training_platform": metrics["training_platform"],
             "self_retrieval_top1_accuracy": metrics[
                 "self_retrieval_top1_accuracy"
             ],
