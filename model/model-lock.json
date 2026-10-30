@@ -1,0 +1,13 @@
+{
+  "source": "repository",
+  "repo_id": "E-Vanika/zippy-kiddo",
+  "revision": "40992411025",
+  "filename": "model.json",
+  "sha256": "393fe42f2d4958609d6580540ddcfaeddc2ec2c41d3b926030c2c6223d74545e",
+  "catalogue_version": "2026.10-draft.1",
+  "metrics": {
+    "training_platform": "github-actions-fallback",
+    "self_retrieval_top1_accuracy": 1.0,
+    "vocabulary_size": 436
+  }
+}
