@@ -26,6 +26,14 @@ def test_health_and_degraded_readiness() -> None:
     assert readiness.json()["activity_count"] >= 30
 
 
+def test_hero_image_is_served() -> None:
+    response = client.get("/static/images/hero-parent-child-activities.png")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+    assert len(response.content) > 1_000
+
+
 def test_recommendation_contract() -> None:
     response = client.post("/api/v1/recommendations", json=valid_payload())
 

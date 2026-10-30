@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 
 from . import __version__
@@ -49,6 +50,11 @@ app = FastAPI(
     title="Zippy Kiddo",
     version=__version__,
     description="Safe activity recommendations for children ages 3-12.",
+)
+app.mount(
+    "/static",
+    StaticFiles(directory=str(files("zippy_kiddo").joinpath("static"))),
+    name="static",
 )
 
 
