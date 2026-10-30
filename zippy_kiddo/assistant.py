@@ -51,7 +51,7 @@ def answer_chat(
             assistant_mode="hybrid-tfidf" if model_revision else "catalogue",
         )
 
-    if any(word in message for word in ("train", "model", "ai")):
+    if "train" in message or "model" in message or re.search(r"\bai\b", message):
         model_message = (
             f"A catalogue retrieval model is loaded at revision {model_revision}. It was "
             f"trained on {len(activities)} reviewed activity records, quality-checked, "
