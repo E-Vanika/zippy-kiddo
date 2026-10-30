@@ -16,6 +16,10 @@ STOP_WORDS = {
     "it", "of", "on", "or", "the", "to", "with",
 }
 
+# The GitHub workflow replaces this with the reviewed catalogue when creating
+# the standalone script uploaded to Kaggle. It stays None for local training.
+EMBEDDED_CATALOGUE: dict[str, object] | None = None
+
 
 def tokens(value: str) -> list[str]:
     return [
@@ -56,7 +60,12 @@ def main() -> None:
     source = Path(__file__).with_name("activities.json")
     if not source.is_file():
         source = Path(__file__).resolve().parents[2] / "zippy_kiddo/data/activities.json"
-    payload = json.loads(source.read_text(encoding="utf-8"))
+    if source.is_file():
+        payload = json.loads(source.read_text(encoding="utf-8"))
+    elif EMBEDDED_CATALOGUE is not None:
+        payload = EMBEDDED_CATALOGUE
+    else:
+        raise FileNotFoundError("Reviewed activities catalogue was not provided")
     activities = payload["activities"]
     documents = {
         activity["id"]: tokens(activity_document(activity)) for activity in activities

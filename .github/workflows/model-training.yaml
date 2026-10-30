@@ -83,7 +83,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp zippy_kiddo/data/activities.json training/kaggle/activities.json
+          python training/kaggle/build_kaggle_script.py \
+            --template training/kaggle/train.py \
+            --catalogue zippy_kiddo/data/activities.json \
+            --output training/kaggle/script.py
           sed "s/__KAGGLE_USERNAME__/${KAGGLE_PROFILE_USERNAME}/g" \
             training/kaggle/kernel-metadata.template.json \
             > training/kaggle/kernel-metadata.json
@@ -184,6 +187,7 @@ jobs:
           retention-days: 30
 
       - name: Commit immutable model revision
+        id: promote
         shell: bash
         run: |
           set -euo pipefail
@@ -195,10 +199,18 @@ jobs:
           fi
           if git diff --cached --quiet; then
             echo "Model lock already points to this artifact."
+            echo "changed=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m "model: promote validated Kaggle ranker"
           git push origin HEAD:main
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Trigger application build for promoted model
+        if: ${{ steps.promote.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run app-ci.yaml --ref main
 
       - name: Publish model summary
         shell: bash

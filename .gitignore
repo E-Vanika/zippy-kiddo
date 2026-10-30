@@ -39,3 +39,4 @@ zippy_kiddo/model/model.json
 zippy_kiddo/model/model-lock.json
 training/kaggle/activities.json
 training/kaggle/kernel-metadata.json
+training/kaggle/script.py
