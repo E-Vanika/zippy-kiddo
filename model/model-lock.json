@@ -1,9 +1,9 @@
 {
   "source": "huggingface",
   "repo_id": "vanikae/zippy-kiddo-ranker",
-  "revision": "1b77bae063942c12acc829b29ba4a6c6ae1e7b1b",
+  "revision": "13fa0bb09b85f1cad0c9f063aec5a79e90bc745c",
   "filename": "model.json",
-  "sha256": "84c4cc3ba18d951abf3a51f3f90df1c1d797b5340883b3878c982f905348f8b6",
+  "sha256": "d063d0932147b03472a83338bcf8a0e77a5894cc85a42fec2efc6c9d9ef8c5e9",
   "catalogue_version": "2026.10-draft.1",
   "metrics": {
     "training_platform": "kaggle",
