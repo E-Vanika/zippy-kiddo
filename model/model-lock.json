@@ -1,9 +1,9 @@
 {
-  "source": "repository",
-  "repo_id": "E-Vanika/zippy-kiddo",
-  "revision": "40992411025",
+  "source": "huggingface",
+  "repo_id": "vanikae/zippy-kiddo-ranker",
+  "revision": "f6ba4f08d10ce9f9cdac63e59ed98bc85f2297c2",
   "filename": "model.json",
-  "sha256": "393fe42f2d4958609d6580540ddcfaeddc2ec2c41d3b926030c2c6223d74545e",
+  "sha256": "4716a345cfd1492d3ac59402c4777cbf251424f0449a9fe3691e415eda3b9f90",
   "catalogue_version": "2026.10-draft.1",
   "metrics": {
     "training_platform": "github-actions-fallback",
