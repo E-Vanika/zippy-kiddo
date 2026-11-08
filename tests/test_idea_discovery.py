@@ -26,6 +26,7 @@ def test_candidate_is_normalised_and_pending_review() -> None:
     assert candidate["duration_minutes"] == 15
     assert candidate["review_status"] == "pending"
     assert candidate["source_urls"] == ["https://example.org/activity"]
+    assert candidate["automated_validation"]["status"] == "passed"
 
 
 def test_high_risk_candidate_is_rejected() -> None:
@@ -36,3 +37,14 @@ def test_high_risk_candidate_is_rejected() -> None:
 
 def test_fenced_json_is_accepted() -> None:
     assert extract_json("```json\n{\"ideas\": []}\n```") == {"ideas": []}
+
+
+def test_duplicate_and_unknown_material_candidates_are_rejected() -> None:
+    candidate = valid_candidate()
+    assert validate_candidate(
+        candidate,
+        ["https://example.org/activity"],
+        "2026-11-09T00:00:00+00:00",
+        known_titles={"texture rubbing explorer"},
+        allowed_materials={"paper", "crayons"},
+    ) is None

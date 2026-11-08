@@ -6,7 +6,10 @@ the live catalogue or train a model.
 
 ## Required review
 
-Every candidate has `review_status: pending`. Before manually promoting one to
+Every candidate has `review_status: pending`. Before it reaches the queue, the
+workflow automatically requires a grounded source, validates the schema,
+age/time bounds and known materials, rejects high-risk keywords, and filters
+near-duplicate titles. Before manually promoting a passed candidate to
 `zippy_kiddo/data/activities.json`, check its source URLs, original wording,
 age range, materials, supervision, and safety note. Only reviewed catalogue
 entries can be recommended or included in Kaggle training.

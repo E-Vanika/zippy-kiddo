@@ -18,6 +18,7 @@ ALLOWED_SETTINGS = {"indoor", "outdoor"}
 ALLOWED_ENERGY = {"calm", "moderate", "active"}
 ALLOWED_SUPERVISION = {"independent", "nearby", "continuous"}
 MAX_CANDIDATES_PER_RUN = 10
+TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 
 
 def slugify(value: str) -> str:
@@ -39,8 +40,31 @@ def string_list(value: object, *, limit: int = 12) -> list[str] | None:
     return list(dict.fromkeys(cleaned))[:limit]
 
 
+def title_tokens(value: str) -> set[str]:
+    return set(TOKEN_PATTERN.findall(value.lower()))
+
+
+def is_near_duplicate(title: str, known_titles: set[str]) -> bool:
+    """Reject exact and high-overlap title duplicates before human review."""
+    candidate_tokens = title_tokens(title)
+    for known_title in known_titles:
+        if title.lower() == known_title:
+            return True
+        known_tokens = title_tokens(known_title)
+        overlap = len(candidate_tokens & known_tokens)
+        union = len(candidate_tokens | known_tokens)
+        if union and overlap / union >= 0.8:
+            return True
+    return False
+
+
 def validate_candidate(
-    raw: object, source_urls: list[str], discovered_at: str
+    raw: object,
+    source_urls: list[str],
+    discovered_at: str,
+    *,
+    known_titles: set[str] | None = None,
+    allowed_materials: set[str] | None = None,
 ) -> dict[str, object] | None:
     """Turn untrusted model output into a bounded pending-review record."""
     if not isinstance(raw, dict):
@@ -56,7 +80,7 @@ def validate_candidate(
     if not all(isinstance(item, str) for item in (title, description, energy, supervision, safety_note)):
         return None
     title, description, safety_note = (" ".join(item.split()) for item in (title, description, safety_note))
-    if not (
+    if not source_urls or not (
         4 <= len(title) <= 80 and 20 <= len(description) <= 300 and 10 <= len(safety_note) <= 300
         and steps is not None and 2 <= len(steps) <= 5 and required is not None and optional is not None
         and settings is not None and settings and set(settings).issubset(ALLOWED_SETTINGS)
@@ -69,6 +93,10 @@ def validate_candidate(
     text = " ".join([title, description, safety_note, *steps, *required, *optional])
     if blocked.search(text):
         return None
+    if known_titles is not None and is_near_duplicate(title, known_titles):
+        return None
+    if allowed_materials is not None and not set(required + optional).issubset(allowed_materials):
+        return None
     fingerprint = hashlib.sha256(title.lower().encode("utf-8")).hexdigest()[:12]
     return {
         "candidate_id": f"gemini-{discovered_at[:10]}-{slugify(title)}-{fingerprint}",
@@ -77,6 +105,16 @@ def validate_candidate(
         "supervision": supervision, "required_materials": required,
         "optional_materials": optional, "steps": steps, "safety_note": safety_note,
         "source_urls": source_urls, "discovered_at": discovered_at,
+        "automated_validation": {
+            "status": "passed",
+            "checks": [
+                "grounded-source-present",
+                "schema-and-age-time-bounds",
+                "low-risk-keyword-screen",
+                "duplicate-title-screen",
+                "known-materials-only",
+            ],
+        },
         "review_status": "pending", "reviewer": None,
     }
 
@@ -136,13 +174,24 @@ def main() -> None:
     queue = json.loads(args.queue.read_text(encoding="utf-8"))
     known_titles = {item["title"].strip().lower() for item in catalogue["activities"]}
     known_titles.update(item["title"].strip().lower() for item in queue["candidates"])
+    allowed_materials = {
+        material
+        for activity in catalogue["activities"]
+        for material in (*activity["required_materials"], *activity["optional_materials"])
+    }
     discovered_at = datetime.now(UTC).isoformat()
     generated, sources = gemini_discover(api_key, args.model)
     ideas = generated.get("ideas", []) if isinstance(generated, dict) else []
     accepted: list[dict[str, object]] = []
     for idea in ideas[:MAX_CANDIDATES_PER_RUN]:
-        candidate = validate_candidate(idea, sources, discovered_at)
-        if candidate and str(candidate["title"]).lower() not in known_titles:
+        candidate = validate_candidate(
+            idea,
+            sources,
+            discovered_at,
+            known_titles=known_titles,
+            allowed_materials=allowed_materials,
+        )
+        if candidate:
             accepted.append(candidate)
             known_titles.add(str(candidate["title"]).lower())
     queue["last_run"] = {"at": discovered_at, "model": args.model, "source_count": len(sources), "generated_count": len(ideas), "accepted_count": len(accepted)}
