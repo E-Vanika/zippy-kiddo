@@ -1,0 +1,57 @@
+name: Daily Candidate Idea Discovery
+
+on:
+  schedule:
+    # 07:00 Asia/Kolkata. API usage is gated by a repository variable.
+    - cron: "30 1 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: zippy-kiddo-idea-discovery
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    # Enable scheduled usage only after confirming Gemini grounding pricing.
+    if: ${{ github.event_name == 'workflow_dispatch' || vars.ENABLE_GEMINI_DAILY_DISCOVERY == 'true' }}
+    runs-on: ubuntu-latest
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_DISCOVERY_MODEL: ${{ vars.GEMINI_DISCOVERY_MODEL || 'gemini-2.5-flash' }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Require Gemini credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GEMINI_API_KEY}" || { echo "::error::Missing GEMINI_API_KEY secret"; exit 1; }
+      - name: Discover pending activity candidates
+        run: |
+          python training/discover_ideas.py \
+            --catalogue zippy_kiddo/data/activities.json \
+            --queue data/candidate-ideas.json
+      - name: Preserve discovery evidence
+        uses: actions/upload-artifact@v6
+        with:
+          name: candidate-ideas-${{ github.run_id }}
+          path: data/candidate-ideas.json
+          retention-days: 30
+      - name: Commit pending review queue
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/candidate-ideas.json
+          if git diff --cached --quiet; then
+            echo "No candidate queue changes."
+            exit 0
+          fi
+          git commit -m "data: add Gemini discovery candidates for review"
+          git push origin HEAD:main

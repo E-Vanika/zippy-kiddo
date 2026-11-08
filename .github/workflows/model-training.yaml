@@ -15,7 +15,11 @@ on:
   push:
     branches: [main]
     paths:
-      - "training/**"
+      - "training/kaggle/**"
+      - "training/download_model.py"
+      - "training/publish_model.py"
+      - "training/write_model_lock.py"
+      - "zippy_kiddo/data/activities.json"
       - ".github/workflows/model-training.yaml"
 
 permissions:

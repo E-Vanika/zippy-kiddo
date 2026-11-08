@@ -58,7 +58,11 @@ credentials are unavailable. A checksum-protected model lock pins the exact
 artifact used in the OCI image and records the training platform. Hard safety
 constraints remain deterministic and the service falls back safely when an
 artifact is unavailable. Future preference learning will require genuine,
-reviewed, non-personal feedback rather than synthetic labels.
+reviewed, non-personal feedback rather than synthetic labels. Gemini Search
+grounding can optionally discover web-informed **candidate** ideas on a daily
+schedule. It writes only to a pending review queue; it cannot change live
+recommendations or model training without human approval. See [candidate idea
+discovery](docs/idea-discovery.md).
 
 Production runs on an OCI Always Free E2 Micro instance. Terraform manages the
 network and compute resources, Ansible reconciles the host, GitHub Actions
