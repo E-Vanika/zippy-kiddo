@@ -1,12 +1,12 @@
 {
   "source": "huggingface",
   "repo_id": "vanikae/zippy-kiddo-ranker",
-  "revision": "13fa0bb09b85f1cad0c9f063aec5a79e90bc745c",
+  "revision": "7c818858cd170295c5880fba1a883cfd227046b4",
   "filename": "model.json",
-  "sha256": "d063d0932147b03472a83338bcf8a0e77a5894cc85a42fec2efc6c9d9ef8c5e9",
+  "sha256": "92e6d5cca40030aa1a9c295ba30d7640d854a07dfc764ce485dbf8fd7d020cde",
   "catalogue_version": "2026.10-draft.1",
   "metrics": {
-    "training_platform": "kaggle",
+    "training_platform": "github-actions-fallback",
     "self_retrieval_top1_accuracy": 1.0,
     "vocabulary_size": 436
   }
